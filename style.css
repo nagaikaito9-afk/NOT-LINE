@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-family: system-ui;
     background-color: #ededed;
     margin: 0;
     padding: 0;
@@ -8,6 +8,7 @@ body {
     justify-content: center;
     align-items: center;
     height: 100vh;
+    transition: font-family 0.2s ease;
 }
 
 #app-container {
@@ -35,21 +36,8 @@ body {
 .screen.hidden { display: none !important; }
 
 /* ログイン画面 */
-#login-screen {
-    justify-content: center;
-    align-items: center;
-    background-color: #06C755;
-    padding: 20px;
-}
-.login-box {
-    background: white;
-    padding: 40px 20px;
-    border-radius: 12px;
-    width: 100%;
-    max-width: 320px;
-    text-align: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
+#login-screen { justify-content: center; align-items: center; background-color: #06C755; padding: 20px; }
+.login-box { background: white; padding: 40px 20px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .login-box h2 { margin-top: 0; color: #06C755; font-size: 24px; }
 .login-box p { font-size: 13px; color: #666; margin-bottom: 20px; }
 
@@ -65,21 +53,27 @@ header {
     align-items: center;
     z-index: 10;
 }
+.header-right { display: flex; gap: 10px; }
 .header-icon-btn, #back-btn { background: none; border: none; color: white; font-size: 18px; cursor: pointer; }
 
-.my-profile {
-    display: flex;
-    align-items: center;
-    padding: 12px 15px;
-    background-color: #f8f8f8;
-    border-bottom: 1px solid #eee;
-    gap: 12px;
+/* アカウント背景つきプロフィールエリア */
+.my-profile-container {
+    background-color: #7f7f7f;
+    background-size: cover;
+    background-position: center;
+    padding: 20px 15px;
+    border-bottom: 1px solid #ddd;
+    position: relative;
 }
-.avatar { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; background-color: #ccc; }
+.my-profile-container::before {
+    content: ""; position: absolute; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.25); z-index: 1;
+}
+.my-profile { display: flex; align-items: center; gap: 12px; position: relative; z-index: 2; color: white; }
+.avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; background-color: #fff; border: 2px solid white; }
 .profile-info { flex: 1; display: flex; flex-direction: column; }
-.profile-name { font-weight: bold; font-size: 15px; }
-.edit-profile-btn { font-size: 11px; color: #06C755; cursor: pointer; }
-.logout-btn { background: none; border: 1px solid #ff4d4f; color: #ff4d4f; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+.profile-name { font-weight: bold; font-size: 16px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+.edit-profile-btn { font-size: 11px; color: #a3ffc2; cursor: pointer; text-decoration: underline; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+.logout-btn { background: rgba(255,77,79,0.9); border: none; color: white; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
 
 .tab-content { flex: 1; overflow-y: auto; display: none; }
 .tab-content.active { display: block; }
@@ -129,10 +123,11 @@ header {
 .stamp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .stamp-item { width: 100%; height: 70px; object-fit: contain; cursor: pointer; background: #fff; border-radius: 8px; padding: 4px; border: 1px solid #eee; }
 
+/* モーダル */
 .modal { position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:100; }
 .modal.hidden { display: none !important; }
-.modal-content { background:#fff; padding:20px; border-radius:12px; width:85%; max-width:320px; text-align:center; }
-.modal-content input[type="text"] { width:100%; padding:8px; margin:8px 0; border:1px solid #ccc; border-radius:4px; }
+.modal-content { background:#fff; padding:20px; border-radius:12px; width:85%; max-width:340px; text-align:center; max-height: 85vh; overflow-y: auto; }
+.modal-content input[type="text"], .modal-content select { width:100%; padding:8px; margin:8px 0; border:1px solid #ccc; border-radius:4px; font-size:13px; }
 .file-input-group { text-align: left; margin: 10px 0; font-size: 12px; color: #555; }
 .file-input-group input { margin-top: 5px; width: 100%; }
 
@@ -140,6 +135,17 @@ header {
 .btn-primary { flex:1; background:#06C755; color:#fff; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; }
 .btn-secondary { flex:1; background:#ccc; color:#333; border:none; padding:8px; border-radius:4px; cursor:pointer; }
 .btn-small { background: #06C755; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; }
+
+/* アプリ設定用スタイル */
+.setting-item { display: flex; flex-direction: column; text-align: left; margin-bottom: 12px; font-size: 13px; color: #333; }
+.setting-item label { font-weight: bold; margin-bottom: 4px; }
+.setting-item input[type="color"] { width: 100%; height: 35px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+
+/* ストーリー用スタイル */
+.story-box { max-height: 250px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 15px; background: #fafafa; }
+.story-item { border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: left; }
+.story-user { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: bold; margin-bottom: 6px; }
+.story-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 6px; }
 
 .menu-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .menu-btn { padding: 10px; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; text-align: left; }

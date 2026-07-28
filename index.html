@@ -23,16 +23,22 @@
     <div id="main-screen" class="screen hidden">
         <header id="main-header">
             <span id="header-title">トーク</span>
-            <button id="add-btn" class="header-icon-btn">＋</button>
+            <div class="header-right">
+                <button id="story-btn" class="header-icon-btn">🎬</button>
+                <button id="settings-btn" class="header-icon-btn">⚙️</button>
+                <button id="add-btn" class="header-icon-btn">＋</button>
+            </div>
         </header>
 
-        <div class="my-profile">
-            <img id="my-avatar" src="" class="avatar" alt="アバター">
-            <div class="profile-info">
-                <div id="my-name-display" class="profile-name">ユーザー</div>
-                <span class="edit-profile-btn" id="edit-profile-trigger">プロフィール変更</span>
+        <div class="my-profile-container" id="my-profile-bg">
+            <div class="my-profile">
+                <img id="my-avatar" src="" class="avatar" alt="アバター">
+                <div class="profile-info">
+                    <div id="my-name-display" class="profile-name">ユーザー</div>
+                    <span class="edit-profile-btn" id="edit-profile-trigger">プロフィール変更</span>
+                </div>
+                <button id="logout-btn" class="logout-btn">ログアウト</button>
             </div>
-            <button id="logout-btn" class="logout-btn">ログアウト</button>
         </div>
 
         <div id="tab-chats" class="tab-content active">
@@ -60,7 +66,7 @@
         <header>
             <button id="back-btn">＜</button>
             <span id="chat-target-name">トーク部屋</span>
-            <button id="chat-menu-btn" class="header-icon-btn">⚙️</button>
+            <button id="chat-menu-btn" class="header-icon-btn">🛠️</button>
         </header>
         
         <div id="messages"></div>
@@ -85,8 +91,12 @@
             <h3>プロフィール編集</h3>
             <input type="text" id="edit-name-input" placeholder="表示名">
             <div class="file-input-group">
-                <label>画像参照：</label>
+                <label>アイコン画像変更：</label>
                 <input type="file" id="edit-avatar-file" accept="image/*">
+            </div>
+            <div class="file-input-group">
+                <label>アカウント背景画像変更：</label>
+                <input type="file" id="edit-profile-bg-file" accept="image/*">
             </div>
             <div class="modal-buttons">
                 <button id="save-profile-btn" class="btn-primary">保存</button>
@@ -104,6 +114,11 @@
             </div>
             <div id="form-add-friend">
                 <input type="text" id="friend-id-input" placeholder="相手の名前（Google名）を入力">
+                <input type="text" id="friend-nickname-input" placeholder="あだ名（省略可）">
+                <div class="file-input-group">
+                    <label>相手のアイコン画像（参照）：</label>
+                    <input type="file" id="friend-avatar-file" accept="image/*">
+                </div>
                 <button id="add-friend-submit" class="btn-primary">追加</button>
             </div>
             <div id="form-add-group" class="hidden">
@@ -116,16 +131,62 @@
         </div>
     </div>
 
+    <div id="modal-settings" class="modal hidden">
+        <div class="modal-content">
+            <h3>アプリ設定</h3>
+            <div class="setting-item">
+                <label>通知設定：</label>
+                <button id="request-notification-btn" class="btn-primary">🔔 通知を許可する</button>
+            </div>
+            <div class="setting-item">
+                <label>フォント（文字）変更：</label>
+                <select id="font-select">
+                    <option value="system-ui">標準システムフォント</option>
+                    <option value="'Hiragino Kaku Gothic ProN', sans-serif">ヒラギノ角ゴ (きれい)</option>
+                    <option value="'Yu Gothic', sans-serif">遊ゴシック (シンプル)</option>
+                    <option value="'Courier New', monospace">レトロな等幅フォント</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label>自分の吹き出し色：</label>
+                <input type="color" id="bubble-color-picker" value="#85E249">
+            </div>
+            <div class="setting-item">
+                <label>吹き出しの形：</label>
+                <select id="bubble-shape-select">
+                    <option value="15px">丸みのあるLINE風 (標準)</option>
+                    <option value="4px">角ばったクール風</option>
+                    <option value="30px">カプセル風</option>
+                </select>
+            </div>
+            <button class="btn-secondary closeModal" style="margin-top:15px;">閉じる</button>
+        </div>
+    </div>
+
+    <div id="modal-story" class="modal hidden">
+        <div class="modal-content">
+            <h3>ストーリー</h3>
+            <div id="story-display-area" class="story-box">
+                <p style="color:#aaa;">投稿されたストーリーがここに24時間表示されるよ！</p>
+            </div>
+            <div class="file-input-group">
+                <label>新しくストーリーを投稿する（画像参照）：</label>
+                <input type="file" id="post-story-file" accept="image/*">
+            </div>
+            <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
+        </div>
+    </div>
+
     <div id="modal-chat-menu" class="modal hidden">
         <div class="modal-content">
             <h3>トーク設定</h3>
             <div class="menu-list">
                 <div class="file-input-group">
-                    <label>🎬 壁紙をリアルタイム変更（画像参照）：</label>
+                    <label>🎬 壁紙をリアルタイム変更：</label>
                     <input type="file" id="change-bg-file" accept="image/*">
                 </div>
                 <hr>
-                <button id="set-nickname-btn" class="menu-btn">🏷️ あだ名（呼び名）を設定</button>
+                <button id="set-nickname-btn" class="menu-btn">🏷️ あだ名（呼び名）を変更</button>
                 <button id="toggle-mute-btn" class="menu-btn">🔇 ミュート切り替え</button>
                 <button id="toggle-block-btn" class="menu-btn danger">🚫 ブロック切り替え</button>
                 <button id="toggle-hide-btn" class="menu-btn danger">👁️ 非表示にする</button>
