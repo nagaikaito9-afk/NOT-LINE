@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOT=LINE</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<div id="app-container">
+
+    <div id="login-screen" class="screen">
+        <div class="login-box">
+            <h2>NOT=LINE</h2>
+            <p>Googleアカウントでログインしてスタート！</p>
+            <div id="google-btn-container" style="display: flex; justify-content: center; margin-top: 20px;"></div>
+        </div>
+    </div>
+
+    <div id="main-screen" class="screen hidden">
+        <header id="main-header">
+            <span id="header-title">トーク</span>
+            <button id="add-btn" class="header-icon-btn">＋</button>
+        </header>
+
+        <div class="my-profile">
+            <img id="my-avatar" src="" class="avatar" alt="アバター">
+            <div class="profile-info">
+                <div id="my-name-display" class="profile-name">ユーザー</div>
+                <span class="edit-profile-btn" id="edit-profile-trigger">プロフィール変更</span>
+            </div>
+            <button id="logout-btn" class="logout-btn">ログアウト</button>
+        </div>
+
+        <div id="tab-chats" class="tab-content active">
+            <ul id="chat-list" class="list-view"></ul>
+        </div>
+
+        <div id="tab-friends" class="tab-content">
+            <ul id="friend-list" class="list-view"></ul>
+        </div>
+
+        <nav id="bottom-nav">
+            <button class="nav-btn active" data-tab="tab-chats">
+                <span class="icon">💬</span>
+                <span>トーク</span>
+                <span id="total-unread" class="badge hidden">0</span>
+            </button>
+            <button class="nav-btn" data-tab="tab-friends">
+                <span class="icon">👤</span>
+                <span>フレンド</span>
+            </button>
+        </nav>
+    </div>
+
+    <div id="chat-screen" class="screen hidden">
+        <header>
+            <button id="back-btn">＜</button>
+            <span id="chat-target-name">トーク部屋</span>
+            <button id="chat-menu-btn" class="header-icon-btn">⚙️</button>
+        </header>
+        
+        <div id="messages"></div>
+
+        <div id="stamp-picker" class="stamp-picker hidden">
+            <div class="stamp-header">
+                <span>スタンプを選択</span>
+                <button id="add-custom-stamp-trigger" class="btn-small">+ 自作スタンプ追加</button>
+            </div>
+            <div id="stamp-list" class="stamp-grid"></div>
+        </div>
+
+        <div id="input-area">
+            <button id="stamp-toggle-btn" class="icon-btn">😊</button>
+            <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
+            <button id="send-btn">送信</button>
+        </div>
+    </div>
+
+    <div id="modal-profile" class="modal hidden">
+        <div class="modal-content">
+            <h3>プロフィール編集</h3>
+            <input type="text" id="edit-name-input" placeholder="表示名">
+            <div class="file-input-group">
+                <label>画像参照：</label>
+                <input type="file" id="edit-avatar-file" accept="image/*">
+            </div>
+            <div class="modal-buttons">
+                <button id="save-profile-btn" class="btn-primary">保存</button>
+                <button class="btn-secondary closeModal">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-add" class="modal hidden">
+        <div class="modal-content">
+            <h3>新規作成</h3>
+            <div class="add-type-selector">
+                <button id="type-friend-btn" class="active">フレンド追加</button>
+                <button id="type-group-btn">グループ作成</button>
+            </div>
+            <div id="form-add-friend">
+                <input type="text" id="friend-id-input" placeholder="相手の名前（Google名）を入力">
+                <button id="add-friend-submit" class="btn-primary">追加</button>
+            </div>
+            <div id="form-add-group" class="hidden">
+                <input type="text" id="group-name-input" placeholder="グループ名">
+                <p style="font-size:12px; color:#666; margin: 5px 0;">メンバーを選択：</p>
+                <div id="group-member-select" class="checkbox-list"></div>
+                <button id="create-group-submit" class="btn-primary" style="margin-top:10px;">作成</button>
+            </div>
+            <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
+        </div>
+    </div>
+
+    <div id="modal-chat-menu" class="modal hidden">
+        <div class="modal-content">
+            <h3>トーク設定</h3>
+            <div class="menu-list">
+                <div class="file-input-group">
+                    <label>🎬 壁紙をリアルタイム変更（画像参照）：</label>
+                    <input type="file" id="change-bg-file" accept="image/*">
+                </div>
+                <hr>
+                <button id="set-nickname-btn" class="menu-btn">🏷️ あだ名（呼び名）を設定</button>
+                <button id="toggle-mute-btn" class="menu-btn">🔇 ミュート切り替え</button>
+                <button id="toggle-block-btn" class="menu-btn danger">🚫 ブロック切り替え</button>
+                <button id="toggle-hide-btn" class="menu-btn danger">👁️ 非表示にする</button>
+                <button id="delete-friend-btn" class="menu-btn danger">🗑️ フレンド削除</button>
+            </div>
+            <button class="btn-secondary closeModal" style="margin-top:15px;">閉じる</button>
+        </div>
+    </div>
+
+    <div id="modal-custom-stamp" class="modal hidden">
+        <div class="modal-content">
+            <h3>🎨 自作スタンプ作成</h3>
+            <div class="file-input-group">
+                <label>スタンプ画像を選択（画像参照）：</label>
+                <input type="file" id="custom-stamp-file" accept="image/*">
+            </div>
+            <div class="modal-buttons">
+                <button id="save-custom-stamp-btn" class="btn-primary">スタンプリストに追加</button>
+                <button class="btn-secondary closeModal">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
