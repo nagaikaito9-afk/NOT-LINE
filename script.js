@@ -24,6 +24,7 @@ let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
 let activeChatId = null;
 let currentSubscription = null;
 let selectedMsgTarget = null; // コンテキストメニュー対象
+let pendingGoogleUser = null; // 初回ログイン一時保持用
 
 function saveData() {
     if (myUser) localStorage.setItem('notline_myUser', JSON.stringify(myUser));
@@ -108,11 +109,42 @@ function parseJwt(token) {
     return JSON.parse(jsonPayload);
 }
 
+// Googleログイン成功時の処理
 function handleCredentialResponse(response) {
     const userData = parseJwt(response.credential);
-    completeLogin(userData.name, userData.picture);
-    showNotification(`${userData.name} としてログインしたよ！`);
+    const googleId = userData.sub; // Googleアカウント固有ID
+
+    // すでにローカルストレージに同じGoogle IDでログインしたデータがあるか確認
+    if (myUser && myUser.googleId === googleId) {
+        // 2回目以降：既存のユーザー名やプロフィール画像を保持したままログイン
+        completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
+        showNotification(`${myUser.name} としてログインしたよ！`);
+    } else {
+        // 初回ログイン：Google情報を受け取り、名前入力モーダルを表示
+        pendingGoogleUser = {
+            googleId: googleId,
+            defaultName: userData.name,
+            avatar: userData.picture
+        };
+        document.getElementById('first-name-input').value = userData.name;
+        document.getElementById('modal-first-name').classList.remove('hidden');
+    }
 }
+
+// 初回名前決定ボタンの処理
+document.getElementById('save-first-name-btn').addEventListener('click', () => {
+    const inputName = document.getElementById('first-name-input').value.trim();
+    if (!inputName) {
+        showNotification("名前を入力してください！");
+        return;
+    }
+    if (pendingGoogleUser) {
+        completeLogin(inputName, pendingGoogleUser.avatar, pendingGoogleUser.googleId, "");
+        document.getElementById('modal-first-name').classList.add('hidden');
+        showNotification(`${inputName} として登録したよ！`);
+        pendingGoogleUser = null;
+    }
+});
 
 function initGoogleLogin() {
     if (typeof google !== 'undefined') {
@@ -150,25 +182,31 @@ window.onload = function () {
     document.getElementById('bubble-color-picker').value = appSettings.bubbleColor;
     document.getElementById('bubble-shape-select').value = appSettings.bubbleShape;
 
-    if (myUser) {
-        completeLogin(myUser.name, myUser.avatar);
-        if (myUser.profileBg) {
-            document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
-        }
+    // 自動ログイン（保存データがある場合）
+    if (myUser && myUser.name) {
+        completeLogin(myUser.name, myUser.avatar, myUser.googleId, myUser.profileBg);
     }
 };
 
-function completeLogin(username, avatarUrl) {
-    if (!myUser || myUser.name !== username) {
-        myUser = { name: username, avatar: avatarUrl, profileBg: "" };
+function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
+    if (!myUser || myUser.googleId !== googleId) {
+        myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
+    } else {
+        // 名前が変更されている場合は変更後の名前を維持
+        myUser.avatar = avatarUrl || myUser.avatar;
     }
     saveData();
 
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
+    if (myUser.profileBg) {
+        document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
+    }
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
 
+    // トークルームの読み込み
+    chats = {};
     Object.keys(chatsData).forEach(roomId => {
         const room = chatsData[roomId];
         registerChatRoom(roomId, room.name, room.isGroup, room.avatar, room.bgImage, room.members);
@@ -215,6 +253,7 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
     document.getElementById('modal-profile').classList.add('hidden');
+    showNotification("プロフィールを更新したよ！");
 });
 
 // ストーリー
@@ -253,7 +292,6 @@ function renderStories() {
 }
 
 document.getElementById('logout-btn').addEventListener('click', () => {
-    myUser = null; localStorage.removeItem('notline_myUser');
     document.getElementById('main-screen').classList.add('hidden');
     document.getElementById('chat-screen').classList.add('hidden');
     document.getElementById('login-screen').classList.remove('hidden');
@@ -318,7 +356,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     fileInput.value = '';
 });
 
-// グループ作成修正
+// グループ作成
 document.getElementById('create-group-submit').addEventListener('click', () => {
     const groupName = document.getElementById('group-name-input').value.trim();
     if (!groupName) { showNotification("グループ名を入力してね"); return; }
@@ -414,7 +452,7 @@ function updateChatListUI() {
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
         li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
-        list.appendChild(li); // ★【修正！】list.appendChild(list)から、正しくliをappendするように直したよ！
+        list.appendChild(li);
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
