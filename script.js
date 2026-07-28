@@ -1,3 +1,4 @@
+// ★Supabaseの設定
 const SUPABASE_URL = "https://snxfgzqvnafsnrqrhgbh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_aTck43w4EIMBhdUiz_sqJg_Mohv4YHc";
 const GOOGLE_CLIENT_ID = "56462276148-q2n8gpnaphi48gjq7is0i07dtr4ger0v.apps.googleusercontent.com";
@@ -122,7 +123,6 @@ function initGoogleLogin() {
     }
 }
 
-// ファイル選択時の「ファイル名」表示用イベント
 function setupFileInputListeners() {
     const pairs = [
         ['edit-avatar-file', 'edit-avatar-name'],
@@ -281,7 +281,7 @@ document.getElementById('type-friend-btn').addEventListener('click', (e) => {
 
 document.getElementById('type-group-btn').addEventListener('click', (e) => {
     e.target.classList.add('active'); document.getElementById('type-friend-btn').classList.remove('active');
-    document.getElementById('form-add-friend').classList.add('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
+    document.getElementById('form-add-friend').classList.remove('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
     const container = document.getElementById('group-member-select');
     container.innerHTML = Object.keys(friends).map(id => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
 });
@@ -388,7 +388,6 @@ async function openChatRoom(roomId) {
                 }
                 addMessageToScreen(newMsg);
             } else if (payload.eventType === 'DELETE') {
-                // 送信取り消しのリアルタイム同期
                 const deletedElem = document.querySelector(`[data-msg-id="${payload.old.id}"]`);
                 if (deletedElem) deletedElem.remove();
             }
@@ -415,7 +414,7 @@ function updateChatListUI() {
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
         li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
-        list.appendChild(list);
+        list.appendChild(li); // ★【修正！】list.appendChild(list)から、正しくliをappendするように直したよ！
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
@@ -428,7 +427,6 @@ document.getElementById('back-btn').addEventListener('click', () => {
     document.getElementById('main-screen').classList.remove('hidden');
 });
 
-// LINE風 添付メニュー（＋ボタンでスライド切り替え）
 document.getElementById('attach-toggle-btn').addEventListener('click', () => {
     document.getElementById('attachment-menu').classList.toggle('hidden');
     document.getElementById('stamp-picker').classList.add('hidden');
@@ -441,7 +439,6 @@ document.getElementById('attach-image-trigger').addEventListener('click', () => 
     document.getElementById('chat-image-input').click();
 });
 
-// ファイル送信処理
 document.getElementById('chat-file-input').addEventListener('change', async (e) => {
     if (e.target.files.length > 0 && activeChatId) {
         const file = e.target.files[0];
@@ -529,7 +526,6 @@ async function sendMessageInternal(msgText) {
 document.getElementById('send-btn').addEventListener('click', () => { const input = document.getElementById('message-input'); const text = input.value.trim(); if (text) { sendMessageInternal(text); input.value = ''; } });
 document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { const text = e.target.value.trim(); if (text) { sendMessageInternal(text); e.target.value = ''; } } });
 
-// コンテキストメニュー（長押し/右クリックでコピー＆取り消し）
 const ctxMenu = document.getElementById('msg-context-menu');
 document.addEventListener('click', () => ctxMenu.classList.add('hidden'));
 
@@ -564,7 +560,6 @@ function addMessageToScreen(data) {
 
     const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper';
 
-    // 長押し / コンテキストメニュー処理
     const handleContextMenu = (e) => {
         e.preventDefault();
         selectedMsgTarget = { id: data.id, text: data.message };
