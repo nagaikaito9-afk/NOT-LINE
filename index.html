@@ -4,237 +4,259 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Messaging app</title>
+
+    <link rel="icon" href="favicon.png" type="image/png">
+    
+    <link rel="apple-touch-icon" href="favicon.png">
+
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
-<div id="app-container">
+    <div id="app-container">
 
-    <div id="login-screen" class="screen">
-        <div class="login-box">
-            <h2>Messaging app</h2>
-            <p>Googleアカウントでログインしてスタート！</p>
-            <div id="google-btn-container" style="display: flex; justify-content: center; margin-top: 20px;"></div>
-        </div>
-    </div>
-
-    <div id="main-screen" class="screen hidden">
-        <header id="main-header">
-            <span id="header-title">トーク</span>
-            <div class="header-right">
-                <button id="story-btn" class="header-icon-btn">🎬</button>
-                <button id="settings-btn" class="header-icon-btn">⚙️</button>
-                <button id="add-btn" class="header-icon-btn">＋</button>
+        <div id="login-screen" class="screen">
+            <div class="login-box">
+                <h2>Messaging App</h2>
+                <p>ログインして始めよう</p>
+                <div id="google-btn-container" style="display: flex; justify-content: center; margin-top: 15px;"></div>
             </div>
-        </header>
+        </div>
 
-        <div class="my-profile-container" id="my-profile-bg">
-            <div class="my-profile">
-                <img id="my-avatar" src="" class="avatar" alt="アバター">
-                <div class="profile-info">
-                    <div id="my-name-display" class="profile-name">ユーザー</div>
-                    <span class="edit-profile-btn" id="edit-profile-trigger">プロフィール変更</span>
+        <div id="main-screen" class="screen hidden">
+            <header>
+                <span id="header-title">トーク</span>
+                <div class="header-right">
+                    <button class="header-icon-btn" id="story-btn">📖</button>
+                    <button class="header-icon-btn" id="add-btn">➕</button>
+                    <button class="header-icon-btn" id="settings-btn">⚙️</button>
                 </div>
-                <button id="logout-btn" class="logout-btn">ログアウト</button>
+            </header>
+
+            <div class="my-profile-container" id="my-profile-bg">
+                <div class="my-profile">
+                    <img id="my-avatar" src="https://via.placeholder.com/50" class="avatar">
+                    <div class="profile-info">
+                        <span id="my-name-display" class="profile-name">ユーザー名</span>
+                        <span id="edit-profile-trigger" class="edit-profile-btn">プロフィール編集</span>
+                    </div>
+                    <button id="logout-btn" class="logout-btn">ログアウト</button>
+                </div>
+            </div>
+
+            <div id="tab-chats" class="tab-content active">
+                <ul id="chat-list" class="list-view"></ul>
+            </div>
+
+            <div id="tab-friends" class="tab-content">
+                <ul id="friend-list" class="list-view"></ul>
+            </div>
+
+            <div id="bottom-nav">
+                <button class="nav-btn active" data-tab="tab-chats">
+                    <span class="icon">💬</span>
+                    <span>トーク</span>
+                    <span id="total-unread" class="badge hidden">0</span>
+                </button>
+                <button class="nav-btn" data-tab="tab-friends">
+                    <span class="icon">👤</span>
+                    <span>フレンド</span>
+                </button>
             </div>
         </div>
 
-        <div id="tab-chats" class="tab-content active">
-            <ul id="chat-list" class="list-view"></ul>
-        </div>
+        <div id="chat-screen" class="screen hidden">
+            <header>
+                <button id="back-btn">⬅</button>
+                <span id="chat-target-name">相手の名前</span>
+                <button class="header-icon-btn" id="chat-menu-btn">⋮</button>
+            </header>
 
-        <div id="tab-friends" class="tab-content">
-            <ul id="friend-list" class="list-view"></ul>
-        </div>
+            <div id="messages"></div>
 
-        <nav id="bottom-nav">
-            <button class="nav-btn active" data-tab="tab-chats">
-                <span class="icon">💬</span>
-                <span>トーク</span>
-                <span id="total-unread" class="badge hidden">0</span>
-            </button>
-            <button class="nav-btn" data-tab="tab-friends">
-                <span class="icon">👤</span>
-                <span>フレンド</span>
-            </button>
-        </nav>
-    </div>
-
-    <div id="chat-screen" class="screen hidden">
-        <header>
-            <button id="back-btn">＜</button>
-            <span id="chat-target-name">トーク部屋</span>
-            <button id="chat-menu-btn" class="header-icon-btn">🛠️</button>
-        </header>
-        
-        <div id="messages"></div>
-
-        <div id="attachment-menu" class="attachment-menu hidden">
-            <div class="attach-item" id="attach-file-trigger">
-                <div class="attach-icon">📄</div>
-                <span>ファイル送信</span>
-                <input type="file" id="chat-file-input" class="hidden">
+            <div id="stamp-picker" class="stamp-picker hidden">
+                <div class="stamp-header">
+                    <span>スタンプを選択</span>
+                    <button id="add-custom-stamp-trigger" class="btn-small">＋ 自作スタンプ</button>
+                </div>
+                <div id="stamp-list" class="stamp-grid"></div>
             </div>
-            <div class="attach-item" id="attach-image-trigger">
-                <div class="attach-icon">🖼️</div>
-                <span>画像・動画</span>
-                <input type="file" id="chat-image-input" accept="image/*,video/*" class="hidden">
+
+            <div id="attachment-menu" class="attachment-menu hidden">
+                <div class="attach-item" id="attach-file-trigger">
+                    <div class="attach-icon">📄</div>
+                    <span>ファイル</span>
+                </div>
+                <div class="attach-item" id="attach-image-trigger">
+                    <div class="attach-icon">🖼️</div>
+                    <span>写真</span>
+                </div>
+            </div>
+
+            <input type="file" id="chat-file-input" class="hidden-file-input">
+            <input type="file" id="chat-image-input" class="hidden-file-input" accept="image/*">
+
+            <div id="input-area">
+                <button id="attach-toggle-btn" class="line-action-btn">＋</button>
+                <button id="stamp-toggle-btn" class="line-action-btn">😊</button>
+                <input type="text" id="message-input" placeholder="メッセージを入力...">
+                <button id="send-btn">送信</button>
             </div>
         </div>
 
-        <div id="stamp-picker" class="stamp-picker hidden">
-            <div class="stamp-header">
-                <span>スタンプを選択</span>
-                <button id="add-custom-stamp-trigger" class="btn-small">+ 自作スタンプ追加</button>
-            </div>
-            <div id="stamp-list" class="stamp-grid"></div>
+        <div id="msg-context-menu" class="context-menu hidden">
+            <button id="ctx-copy-btn">コピー</button>
+            <button id="ctx-delete-btn" class="danger">送信取り消し</button>
         </div>
 
-        <div id="input-area">
-            <button id="attach-toggle-btn" class="line-action-btn">＋</button>
-            <button id="stamp-toggle-btn" class="line-action-btn">😊</button>
-            <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
-            <button id="send-btn">送信</button>
-        </div>
-    </div>
-
-    <div id="msg-context-menu" class="context-menu hidden">
-        <button id="ctx-copy-btn">📋 コピー</button>
-        <button id="ctx-delete-btn" class="danger">🗑️ 送信取り消し</button>
-    </div>
-
-    <div id="modal-profile" class="modal hidden">
-        <div class="modal-content">
-            <h3>プロフィール編集</h3>
-            <input type="text" id="edit-name-input" placeholder="表示名">
-            <div class="line-file-btn-wrapper">
-                <label for="edit-avatar-file" class="line-custom-file-btn">🖼️ アイコン画像を選択</label>
-                <input type="file" id="edit-avatar-file" accept="image/*" class="hidden-file-input">
-                <span id="edit-avatar-name" class="selected-file-name">未選択</span>
-            </div>
-            <div class="line-file-btn-wrapper">
-                <label for="edit-profile-bg-file" class="line-custom-file-btn">🌅 背景画像を選択</label>
-                <input type="file" id="edit-profile-bg-file" accept="image/*" class="hidden-file-input">
-                <span id="edit-bg-name" class="selected-file-name">未選択</span>
-            </div>
-            <div class="modal-buttons">
-                <button id="save-profile-btn" class="btn-primary">保存</button>
-                <button class="btn-secondary closeModal">キャンセル</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="modal-add" class="modal hidden">
-        <div class="modal-content">
-            <h3>新規作成</h3>
-            <div class="add-type-selector">
-                <button id="type-friend-btn" class="active">フレンド追加</button>
-                <button id="type-group-btn">グループ作成</button>
-            </div>
-            <div id="form-add-friend">
-                <input type="text" id="friend-id-input" placeholder="相手の名前（Google名）を入力">
-                <input type="text" id="friend-nickname-input" placeholder="あだ名（省略可）">
+        <div id="modal-profile" class="modal hidden">
+            <div class="modal-content">
+                <h3>プロフィール編集</h3>
+                <input type="text" id="edit-name-input" placeholder="新しい名前">
+                
                 <div class="line-file-btn-wrapper">
-                    <label for="friend-avatar-file" class="line-custom-file-btn">🖼️ 相手のアイコン画像（任意）</label>
-                    <input type="file" id="friend-avatar-file" accept="image/*" class="hidden-file-input">
-                    <span id="friend-avatar-name" class="selected-file-name">未選択</span>
+                    <label for="edit-avatar-file" class="line-custom-file-btn">アイコン画像を選択</label>
+                    <span id="edit-avatar-name" class="selected-file-name">未選択</span>
+                    <input type="file" id="edit-avatar-file" class="hidden-file-input" accept="image/*">
                 </div>
-                <button id="add-friend-submit" class="btn-primary">追加</button>
-            </div>
-            <div id="form-add-group" class="hidden">
-                <input type="text" id="group-name-input" placeholder="グループ名">
-                <p style="font-size:12px; color:#666; margin: 5px 0;">メンバーを選択：</p>
-                <div id="group-member-select" class="checkbox-list"></div>
-                <button id="create-group-submit" class="btn-primary" style="margin-top:10px;">グループ作成</button>
-            </div>
-            <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
-        </div>
-    </div>
 
-    <div id="modal-settings" class="modal hidden">
-        <div class="modal-content">
-            <h3>アプリ設定</h3>
-            <div class="setting-item">
-                <label>通知設定：</label>
-                <button id="request-notification-btn" class="btn-primary">🔔 通知を許可する</button>
-            </div>
-            <div class="setting-item">
-                <label>フォント（文字）変更：</label>
-                <select id="font-select">
-                    <option value="system-ui">標準システムフォント</option>
-                    <option value="'Hiragino Kaku Gothic ProN', sans-serif">ヒラギノ角ゴ (きれい)</option>
-                    <option value="'Yu Gothic', sans-serif">遊ゴシック (シンプル)</option>
-                    <option value="'Courier New', monospace">レトロな等幅フォント</option>
-                </select>
-            </div>
-            <div class="setting-item">
-                <label>自分の吹き出し色：</label>
-                <input type="color" id="bubble-color-picker" value="#85E249">
-            </div>
-            <div class="setting-item">
-                <label>吹き出しの形：</label>
-                <select id="bubble-shape-select">
-                    <option value="15px">丸みのあるLINE風 (標準)</option>
-                    <option value="4px">角ばったクール風</option>
-                    <option value="30px">カプセル風</option>
-                </select>
-            </div>
-            <button class="btn-secondary closeModal" style="margin-top:15px;">閉じる</button>
-        </div>
-    </div>
-
-    <div id="modal-story" class="modal hidden">
-        <div class="modal-content">
-            <h3>ストーリー</h3>
-            <div id="story-display-area" class="story-box">
-                <p style="color:#aaa;">投稿されたストーリーがここに24時間表示されるよ！</p>
-            </div>
-            <div class="line-file-btn-wrapper">
-                <label for="post-story-file" class="line-custom-file-btn">🎬 新しいストーリーを投稿</label>
-                <input type="file" id="post-story-file" accept="image/*" class="hidden-file-input">
-            </div>
-            <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
-        </div>
-    </div>
-
-    <div id="modal-chat-menu" class="modal hidden">
-        <div class="modal-content">
-            <h3>トーク設定</h3>
-            <div class="menu-list">
                 <div class="line-file-btn-wrapper">
-                    <label for="change-bg-file" class="line-custom-file-btn">🎬 壁紙をリアルタイム変更</label>
-                    <input type="file" id="change-bg-file" accept="image/*" class="hidden-file-input">
+                    <label for="edit-profile-bg-file" class="line-custom-file-btn">背景画像を選択</label>
+                    <span id="edit-bg-name" class="selected-file-name">未選択</span>
+                    <input type="file" id="edit-profile-bg-file" class="hidden-file-input" accept="image/*">
                 </div>
-                <hr>
-                <button id="set-nickname-btn" class="menu-btn">🏷️ あだ名（呼び名）を変更</button>
-                <button id="toggle-mute-btn" class="menu-btn">🔇 ミュート切り替え</button>
-                <button id="toggle-block-btn" class="menu-btn danger">🚫 ブロック切り替え</button>
-                <button id="toggle-hide-btn" class="menu-btn danger">👁️ 非表示にする</button>
-                <button id="delete-friend-btn" class="menu-btn danger">🗑️ フレンド削除</button>
-            </div>
-            <button class="btn-secondary closeModal" style="margin-top:15px;">閉じる</button>
-        </div>
-    </div>
 
-    <div id="modal-custom-stamp" class="modal hidden">
-        <div class="modal-content">
-            <h3>🎨 自作スタンプ作成</h3>
-            <div class="line-file-btn-wrapper">
-                <label for="custom-stamp-file" class="line-custom-file-btn">🖼️ スタンプ画像を選択</label>
-                <input type="file" id="custom-stamp-file" accept="image/*" class="hidden-file-input">
-                <span id="stamp-file-name" class="selected-file-name">未選択</span>
-            </div>
-            <div class="modal-buttons">
-                <button id="save-custom-stamp-btn" class="btn-primary">スタンプリストに追加</button>
-                <button class="btn-secondary closeModal">キャンセル</button>
+                <div class="modal-buttons">
+                    <button id="save-profile-btn" class="btn-primary">保存</button>
+                    <button class="btn-secondary closeModal">キャンセル</button>
+                </div>
             </div>
         </div>
+
+        <div id="modal-add" class="modal hidden">
+            <div class="modal-content">
+                <div class="add-type-selector">
+                    <button id="type-friend-btn" class="active">フレンド追加</button>
+                    <button id="type-group-btn">グループ作成</button>
+                </div>
+
+                <div id="form-add-friend">
+                    <input type="text" id="friend-id-input" placeholder="相手のユーザー名">
+                    <input type="text" id="friend-nickname-input" placeholder="あだ名（任意）">
+                    
+                    <div class="line-file-btn-wrapper">
+                        <label for="friend-avatar-file" class="line-custom-file-btn">相手のアイコン画像</label>
+                        <span id="friend-avatar-name" class="selected-file-name">未選択</span>
+                        <input type="file" id="friend-avatar-file" class="hidden-file-input" accept="image/*">
+                    </div>
+
+                    <div class="modal-buttons">
+                        <button id="add-friend-submit" class="btn-primary">追加</button>
+                        <button class="btn-secondary closeModal">閉じる</button>
+                    </div>
+                </div>
+
+                <div id="form-add-group" class="hidden">
+                    <input type="text" id="group-name-input" placeholder="グループ名">
+                    <p style="font-size: 12px; color: #666; margin: 5px 0;">メンバーを選択:</p>
+                    <div id="group-member-select" class="checkbox-list"></div>
+                    <div class="modal-buttons">
+                        <button id="create-group-submit" class="btn-primary">作成</button>
+                        <button class="btn-secondary closeModal">閉じる</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-chat-menu" class="modal hidden">
+            <div class="modal-content">
+                <h3>トーク設定</h3>
+                <div class="menu-list">
+                    <label for="change-bg-file" class="menu-btn" style="text-align: center; cursor: pointer;">🖼️ トーク壁紙を変更</label>
+                    <input type="file" id="change-bg-file" class="hidden-file-input" accept="image/*">
+                    <button id="set-nickname-btn" class="menu-btn">✏️ あだ名を変更</button>
+                    <button id="toggle-mute-btn" class="menu-btn">🔕 通知ミュート切り替え</button>
+                    <button id="toggle-block-btn" class="menu-btn danger">🚫 ブロック切り替え</button>
+                    <button id="toggle-hide-btn" class="menu-btn danger">👁️ トークを非表示にする</button>
+                    <button id="delete-friend-btn" class="menu-btn danger">❌ フレンドを削除</button>
+                </div>
+                <div class="modal-buttons" style="margin-top: 15px;">
+                    <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-story" class="modal hidden">
+            <div class="modal-content">
+                <h3>ストーリー</h3>
+                <div id="story-display-area" class="story-box"></div>
+                <div class="line-file-btn-wrapper" style="justify-content: center;">
+                    <label for="post-story-file" class="btn-primary" style="padding: 8px 16px; cursor: pointer;">📷 ストーリーを投稿</label>
+                    <input type="file" id="post-story-file" class="hidden-file-input" accept="image/*">
+                </div>
+                <div class="modal-buttons" style="margin-top: 10px;">
+                    <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-custom-stamp" class="modal hidden">
+            <div class="modal-content">
+                <h3>自作スタンプを追加</h3>
+                <div class="line-file-btn-wrapper" style="justify-content: center;">
+                    <label for="custom-stamp-file" class="line-custom-file-btn">画像を選択</label>
+                    <span id="stamp-file-name" class="selected-file-name">未選択</span>
+                    <input type="file" id="custom-stamp-file" class="hidden-file-input" accept="image/*">
+                </div>
+                <div class="modal-buttons">
+                    <button id="save-custom-stamp-btn" class="btn-primary">追加する</button>
+                    <button class="btn-secondary closeModal">キャンセル</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-settings" class="modal hidden">
+            <div class="modal-content">
+                <h3>アプリ設定</h3>
+                
+                <div class="setting-item">
+                    <label>フォント設定</label>
+                    <select id="font-select">
+                        <option value="system-ui">標準 (System UI)</option>
+                        <option value="'Hiragino Sans', 'メイリオ', sans-serif">ゴシック体</option>
+                        <option value="'Yu Mincho', 'YuMincho', serif">明朝体</option>
+                        <option value="'Courier New', monospace">等幅 (レトロ)</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <label>自分の吹き出しカラー</label>
+                    <input type="color" id="bubble-color-picker" value="#85E249">
+                </div>
+
+                <div class="setting-item">
+                    <label>吹き出しの角の丸み</label>
+                    <select id="bubble-shape-select">
+                        <option value="15px">丸め (標準)</option>
+                        <option value="4px">四角</option>
+                        <option value="25px">カプセル型</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <button id="request-notification-btn" class="btn-small">🔔 デスクトップ通知を許可する</button>
+                </div>
+
+                <div class="modal-buttons">
+                    <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
-</div>
-
-<script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
