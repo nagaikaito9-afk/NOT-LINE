@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOT=LINE</title>
+    <title>Messaging app</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -14,7 +14,7 @@
 
     <div id="login-screen" class="screen">
         <div class="login-box">
-            <h2>NOT=LINE</h2>
+            <h2>Messaging app</h2>
             <p>Googleアカウントでログインしてスタート！</p>
             <div id="google-btn-container" style="display: flex; justify-content: center; margin-top: 20px;"></div>
         </div>
@@ -71,6 +71,19 @@
         
         <div id="messages"></div>
 
+        <div id="attachment-menu" class="attachment-menu hidden">
+            <div class="attach-item" id="attach-file-trigger">
+                <div class="attach-icon">📄</div>
+                <span>ファイル送信</span>
+                <input type="file" id="chat-file-input" class="hidden">
+            </div>
+            <div class="attach-item" id="attach-image-trigger">
+                <div class="attach-icon">🖼️</div>
+                <span>画像・動画</span>
+                <input type="file" id="chat-image-input" accept="image/*,video/*" class="hidden">
+            </div>
+        </div>
+
         <div id="stamp-picker" class="stamp-picker hidden">
             <div class="stamp-header">
                 <span>スタンプを選択</span>
@@ -80,23 +93,31 @@
         </div>
 
         <div id="input-area">
-            <button id="stamp-toggle-btn" class="icon-btn">😊</button>
+            <button id="attach-toggle-btn" class="line-action-btn">＋</button>
+            <button id="stamp-toggle-btn" class="line-action-btn">😊</button>
             <input type="text" id="message-input" placeholder="メッセージを入力..." autocomplete="off">
             <button id="send-btn">送信</button>
         </div>
+    </div>
+
+    <div id="msg-context-menu" class="context-menu hidden">
+        <button id="ctx-copy-btn">📋 コピー</button>
+        <button id="ctx-delete-btn" class="danger">🗑️ 送信取り消し</button>
     </div>
 
     <div id="modal-profile" class="modal hidden">
         <div class="modal-content">
             <h3>プロフィール編集</h3>
             <input type="text" id="edit-name-input" placeholder="表示名">
-            <div class="file-input-group">
-                <label>アイコン画像変更：</label>
-                <input type="file" id="edit-avatar-file" accept="image/*">
+            <div class="line-file-btn-wrapper">
+                <label for="edit-avatar-file" class="line-custom-file-btn">🖼️ アイコン画像を選択</label>
+                <input type="file" id="edit-avatar-file" accept="image/*" class="hidden-file-input">
+                <span id="edit-avatar-name" class="selected-file-name">未選択</span>
             </div>
-            <div class="file-input-group">
-                <label>アカウント背景画像変更：</label>
-                <input type="file" id="edit-profile-bg-file" accept="image/*">
+            <div class="line-file-btn-wrapper">
+                <label for="edit-profile-bg-file" class="line-custom-file-btn">🌅 背景画像を選択</label>
+                <input type="file" id="edit-profile-bg-file" accept="image/*" class="hidden-file-input">
+                <span id="edit-bg-name" class="selected-file-name">未選択</span>
             </div>
             <div class="modal-buttons">
                 <button id="save-profile-btn" class="btn-primary">保存</button>
@@ -115,9 +136,10 @@
             <div id="form-add-friend">
                 <input type="text" id="friend-id-input" placeholder="相手の名前（Google名）を入力">
                 <input type="text" id="friend-nickname-input" placeholder="あだ名（省略可）">
-                <div class="file-input-group">
-                    <label>相手のアイコン画像（参照）：</label>
-                    <input type="file" id="friend-avatar-file" accept="image/*">
+                <div class="line-file-btn-wrapper">
+                    <label for="friend-avatar-file" class="line-custom-file-btn">🖼️ 相手のアイコン画像（任意）</label>
+                    <input type="file" id="friend-avatar-file" accept="image/*" class="hidden-file-input">
+                    <span id="friend-avatar-name" class="selected-file-name">未選択</span>
                 </div>
                 <button id="add-friend-submit" class="btn-primary">追加</button>
             </div>
@@ -125,7 +147,7 @@
                 <input type="text" id="group-name-input" placeholder="グループ名">
                 <p style="font-size:12px; color:#666; margin: 5px 0;">メンバーを選択：</p>
                 <div id="group-member-select" class="checkbox-list"></div>
-                <button id="create-group-submit" class="btn-primary" style="margin-top:10px;">作成</button>
+                <button id="create-group-submit" class="btn-primary" style="margin-top:10px;">グループ作成</button>
             </div>
             <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
         </div>
@@ -169,9 +191,9 @@
             <div id="story-display-area" class="story-box">
                 <p style="color:#aaa;">投稿されたストーリーがここに24時間表示されるよ！</p>
             </div>
-            <div class="file-input-group">
-                <label>新しくストーリーを投稿する（画像参照）：</label>
-                <input type="file" id="post-story-file" accept="image/*">
+            <div class="line-file-btn-wrapper">
+                <label for="post-story-file" class="line-custom-file-btn">🎬 新しいストーリーを投稿</label>
+                <input type="file" id="post-story-file" accept="image/*" class="hidden-file-input">
             </div>
             <button class="btn-secondary closeModal" style="margin-top:10px;">閉じる</button>
         </div>
@@ -181,9 +203,9 @@
         <div class="modal-content">
             <h3>トーク設定</h3>
             <div class="menu-list">
-                <div class="file-input-group">
-                    <label>🎬 壁紙をリアルタイム変更：</label>
-                    <input type="file" id="change-bg-file" accept="image/*">
+                <div class="line-file-btn-wrapper">
+                    <label for="change-bg-file" class="line-custom-file-btn">🎬 壁紙をリアルタイム変更</label>
+                    <input type="file" id="change-bg-file" accept="image/*" class="hidden-file-input">
                 </div>
                 <hr>
                 <button id="set-nickname-btn" class="menu-btn">🏷️ あだ名（呼び名）を変更</button>
@@ -199,9 +221,10 @@
     <div id="modal-custom-stamp" class="modal hidden">
         <div class="modal-content">
             <h3>🎨 自作スタンプ作成</h3>
-            <div class="file-input-group">
-                <label>スタンプ画像を選択（画像参照）：</label>
-                <input type="file" id="custom-stamp-file" accept="image/*">
+            <div class="line-file-btn-wrapper">
+                <label for="custom-stamp-file" class="line-custom-file-btn">🖼️ スタンプ画像を選択</label>
+                <input type="file" id="custom-stamp-file" accept="image/*" class="hidden-file-input">
+                <span id="stamp-file-name" class="selected-file-name">未選択</span>
             </div>
             <div class="modal-buttons">
                 <button id="save-custom-stamp-btn" class="btn-primary">スタンプリストに追加</button>

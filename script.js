@@ -22,6 +22,7 @@ let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
 ];
 let activeChatId = null;
 let currentSubscription = null;
+let selectedMsgTarget = null; // コンテキストメニュー対象
 
 function saveData() {
     if (myUser) localStorage.setItem('notline_myUser', JSON.stringify(myUser));
@@ -37,13 +38,13 @@ function saveData() {
             isGroup: chats[id].isGroup,
             unread: chats[id].unread,
             avatar: chats[id].avatar,
-            bgImage: chats[id].bgImage
+            bgImage: chats[id].bgImage,
+            members: chats[id].members || []
         };
     });
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
 }
 
-// ブラウザ通知 & アプリ内通知のダブル送信
 function sendAppNotification(title, body) {
     if (Notification.permission === "granted") {
         new Notification(title, { body: body, icon: myUser ? myUser.avatar : "" });
@@ -60,7 +61,6 @@ function showNotification(msg) {
     setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-// 設定をアプリの見た目に即座に反映させる関数
 function applySettingsUI() {
     document.body.style.fontFamily = appSettings.font;
     saveData();
@@ -122,11 +122,30 @@ function initGoogleLogin() {
     }
 }
 
+// ファイル選択時の「ファイル名」表示用イベント
+function setupFileInputListeners() {
+    const pairs = [
+        ['edit-avatar-file', 'edit-avatar-name'],
+        ['edit-profile-bg-file', 'edit-bg-name'],
+        ['friend-avatar-file', 'friend-avatar-name'],
+        ['custom-stamp-file', 'stamp-file-name']
+    ];
+    pairs.forEach(([inputId, nameId]) => {
+        const el = document.getElementById(inputId);
+        const nameEl = document.getElementById(nameId);
+        if (el && nameEl) {
+            el.addEventListener('change', (e) => {
+                nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択";
+            });
+        }
+    });
+}
+
 window.onload = function () {
     initGoogleLogin();
     applySettingsUI();
+    setupFileInputListeners();
 
-    // 設定フォームの初期値を適用
     document.getElementById('font-select').value = appSettings.font;
     document.getElementById('bubble-color-picker').value = appSettings.bubbleColor;
     document.getElementById('bubble-shape-select').value = appSettings.bubbleShape;
@@ -152,43 +171,26 @@ function completeLogin(username, avatarUrl) {
 
     Object.keys(chatsData).forEach(roomId => {
         const room = chatsData[roomId];
-        registerChatRoom(roomId, room.name, room.isGroup, room.avatar, room.bgImage);
+        registerChatRoom(roomId, room.name, room.isGroup, room.avatar, room.bgImage, room.members);
     });
 
     renderFriends();
     updateChatListUI();
 }
 
-// 🍿 通知の許可ポップアップ要求ボタン
+// 通知許可
 document.getElementById('request-notification-btn').addEventListener('click', () => {
-    if (!("Notification" in window)) {
-        showNotification("このブラウザは通知に対応していないよ");
-        return;
-    }
+    if (!("Notification" in window)) { showNotification("非対応ブラウザです"); return; }
     Notification.requestPermission().then(permission => {
-        if (permission === "granted") {
-            sendAppNotification("通知テスト", "NOT=LINEの通知が有効になったよ！🎉");
-        } else {
-            showNotification("通知が拒否されました");
-        }
+        if (permission === "granted") sendAppNotification("Messaging app", "通知が有効になりました！🎉");
     });
 });
 
-// ⚙️ アプリ基本設定の動的保存・反映
-document.getElementById('font-select').addEventListener('change', (e) => {
-    appSettings.font = e.target.value;
-    applySettingsUI();
-});
-document.getElementById('bubble-color-picker').addEventListener('change', (e) => {
-    appSettings.bubbleColor = e.target.value;
-    saveData();
-});
-document.getElementById('bubble-shape-select').addEventListener('change', (e) => {
-    appSettings.bubbleShape = e.target.value;
-    saveData();
-});
+document.getElementById('font-select').addEventListener('change', (e) => { appSettings.font = e.target.value; applySettingsUI(); });
+document.getElementById('bubble-color-picker').addEventListener('change', (e) => { appSettings.bubbleColor = e.target.value; saveData(); });
+document.getElementById('bubble-shape-select').addEventListener('change', (e) => { appSettings.bubbleShape = e.target.value; saveData(); });
 
-// プロフィール編集（アカウント背景対応）
+// プロフィール保存
 document.getElementById('edit-profile-trigger').addEventListener('click', () => {
     document.getElementById('edit-name-input').value = myUser.name;
     document.getElementById('modal-profile').classList.remove('hidden');
@@ -215,7 +217,7 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     document.getElementById('modal-profile').classList.add('hidden');
 });
 
-// 🎬 ストーリー機能の処理
+// ストーリー
 document.getElementById('story-btn').addEventListener('click', () => {
     document.getElementById('modal-story').classList.remove('hidden');
     renderStories();
@@ -225,14 +227,7 @@ document.getElementById('post-story-file').addEventListener('change', async (e) 
     if (e.target.files.length > 0) {
         const rawBase64 = await readFileAsBase64(e.target.files[0]);
         const compressed = await resizeImage(rawBase64, 300, 400);
-        
-        const newStory = {
-            username: myUser.name,
-            avatar: myUser.avatar,
-            image: compressed,
-            timestamp: Date.now()
-        };
-        stories.push(newStory);
+        stories.push({ username: myUser.name, avatar: myUser.avatar, image: compressed, timestamp: Date.now() });
         saveData();
         renderStories();
         showNotification("ストーリーを投稿したよ！");
@@ -243,27 +238,20 @@ document.getElementById('post-story-file').addEventListener('change', async (e) 
 function renderStories() {
     const area = document.getElementById('story-display-area');
     const now = Date.now();
-    // 24時間以内のストーリーだけをフィルタリング(24時間 = 86400000ミリ秒)
     stories = stories.filter(s => (now - s.timestamp) < 86400000);
     saveData();
-
     if (stories.length === 0) {
         area.innerHTML = `<p style="color:#aaa;">投稿されたストーリーはありません（24時間で消えるよ）</p>`;
         return;
     }
-
     area.innerHTML = stories.map(s => `
         <div class="story-item">
-            <div class="story-user">
-                <img src="${s.avatar}" class="msg-avatar">
-                <span>${s.username}</span>
-            </div>
+            <div class="story-user"><img src="${s.avatar}" class="msg-avatar"><span>${s.username}</span></div>
             <img src="${s.image}" class="story-img">
         </div>
     `).join('');
 }
 
-// ログアウト
 document.getElementById('logout-btn').addEventListener('click', () => {
     myUser = null; localStorage.removeItem('notline_myUser');
     document.getElementById('main-screen').classList.add('hidden');
@@ -271,12 +259,8 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     document.getElementById('login-screen').classList.remove('hidden');
 });
 
-// 設定モーダル開閉
-document.getElementById('settings-btn').addEventListener('click', () => {
-    document.getElementById('modal-settings').classList.remove('hidden');
-});
+document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
 
-// タブ切り替え
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -299,10 +283,10 @@ document.getElementById('type-group-btn').addEventListener('click', (e) => {
     e.target.classList.add('active'); document.getElementById('type-friend-btn').classList.remove('active');
     document.getElementById('form-add-friend').classList.add('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
     const container = document.getElementById('group-member-select');
-    container.innerHTML = Object.keys(friends).map(id => `<label style="display:block;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
+    container.innerHTML = Object.keys(friends).map(id => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
 });
 
-// 【修正】画像参照から正しくアカウント画像を設定してフレンド追加
+// フレンド追加
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const friendName = document.getElementById('friend-id-input').value.trim();
     const nickname = document.getElementById('friend-nickname-input').value.trim();
@@ -318,12 +302,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     }
 
     if (!friends[friendName]) {
-        friends[friendName] = { 
-            name: friendName, 
-            nickname: nickname, 
-            avatar: finalAvatar, 
-            isMuted: false, isBlocked: false, isHidden: false 
-        };
+        friends[friendName] = { name: friendName, nickname: nickname, avatar: finalAvatar, isMuted: false, isBlocked: false, isHidden: false };
         saveData();
         renderFriends();
         
@@ -339,20 +318,25 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     fileInput.value = '';
 });
 
-// グループ作成
+// グループ作成修正
 document.getElementById('create-group-submit').addEventListener('click', () => {
     const groupName = document.getElementById('group-name-input').value.trim();
     if (!groupName) { showNotification("グループ名を入力してね"); return; }
+    
+    const checkboxes = document.querySelectorAll('#group-member-select input[type="checkbox"]:checked');
+    const selectedMembers = [myUser.name];
+    checkboxes.forEach(cb => selectedMembers.push(cb.value));
+
     const roomId = `group_${Date.now()}`;
-    registerChatRoom(roomId, groupName, true, `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`);
+    registerChatRoom(roomId, groupName, true, `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`, "", selectedMembers);
     showNotification(`グループ「${groupName}」を作成したよ！`);
     document.getElementById('modal-add').classList.add('hidden');
     document.getElementById('group-name-input').value = '';
 });
 
-function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "") {
+function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = []) {
     if (chats[roomId]) return;
-    chats[roomId] = { name, isGroup, unread: 0, avatar, bgImage };
+    chats[roomId] = { name, isGroup, unread: 0, avatar, bgImage, members };
     saveData();
     updateChatListUI();
 }
@@ -386,24 +370,28 @@ async function openChatRoom(roomId) {
 
     currentSubscription = supabaseClient
         .channel(`room:${roomId}`)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel=eq.${roomId}` }, payload => {
-            const newMsg = payload.new;
-            if (friends[newMsg.username] && friends[newMsg.username].isBlocked) return;
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `channel=eq.${roomId}` }, payload => {
+            if (payload.eventType === 'INSERT') {
+                const newMsg = payload.new;
+                if (friends[newMsg.username] && friends[newMsg.username].isBlocked) return;
 
-            if (newMsg.message.startsWith('[SYSTEM_BG]:')) {
-                const bgData = newMsg.message.replace('[SYSTEM_BG]:', '');
-                chats[roomId].bgImage = bgData;
-                saveData();
-                document.getElementById('chat-screen').style.backgroundImage = `url(${bgData})`;
-                return;
+                if (newMsg.message.startsWith('[SYSTEM_BG]:')) {
+                    const bgData = newMsg.message.replace('[SYSTEM_BG]:', '');
+                    chats[roomId].bgImage = bgData;
+                    saveData();
+                    document.getElementById('chat-screen').style.backgroundImage = `url(${bgData})`;
+                    return;
+                }
+
+                if (newMsg.username !== myUser.name) {
+                    sendAppNotification(newMsg.username, newMsg.message.startsWith('[STAMP]:') ? "スタンプが届きました" : newMsg.message);
+                }
+                addMessageToScreen(newMsg);
+            } else if (payload.eventType === 'DELETE') {
+                // 送信取り消しのリアルタイム同期
+                const deletedElem = document.querySelector(`[data-msg-id="${payload.old.id}"]`);
+                if (deletedElem) deletedElem.remove();
             }
-
-            // 自分以外のメッセージ受信時にブラウザ通知を発火
-            if (newMsg.username !== myUser.name) {
-                sendAppNotification(newMsg.username, newMsg.message.startsWith('[STAMP]:') ? "スタンプが届きました" : newMsg.message);
-            }
-
-            addMessageToScreen(newMsg);
         })
         .subscribe();
 }
@@ -426,8 +414,8 @@ function updateChatListUI() {
         const room = chats[roomId]; totalUnread += room.unread;
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
-        list.appendChild(li);
+        li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
+        list.appendChild(list);
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
@@ -438,6 +426,42 @@ document.getElementById('back-btn').addEventListener('click', () => {
     activeChatId = null;
     document.getElementById('chat-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
+});
+
+// LINE風 添付メニュー（＋ボタンでスライド切り替え）
+document.getElementById('attach-toggle-btn').addEventListener('click', () => {
+    document.getElementById('attachment-menu').classList.toggle('hidden');
+    document.getElementById('stamp-picker').classList.add('hidden');
+});
+
+document.getElementById('attach-file-trigger').addEventListener('click', () => {
+    document.getElementById('chat-file-input').click();
+});
+document.getElementById('attach-image-trigger').addEventListener('click', () => {
+    document.getElementById('chat-image-input').click();
+});
+
+// ファイル送信処理
+document.getElementById('chat-file-input').addEventListener('change', async (e) => {
+    if (e.target.files.length > 0 && activeChatId) {
+        const file = e.target.files[0];
+        const rawBase64 = await readFileAsBase64(file);
+        const payload = JSON.stringify({ name: file.name, data: rawBase64 });
+        await sendMessageInternal(`[FILE]:${payload}`);
+        document.getElementById('attachment-menu').classList.add('hidden');
+        e.target.value = '';
+    }
+});
+
+document.getElementById('chat-image-input').addEventListener('change', async (e) => {
+    if (e.target.files.length > 0 && activeChatId) {
+        const file = e.target.files[0];
+        const rawBase64 = await readFileAsBase64(file);
+        const compressed = await resizeImage(rawBase64, 400, 400);
+        await sendMessageInternal(`[STAMP]:${compressed}`);
+        document.getElementById('attachment-menu').classList.add('hidden');
+        e.target.value = '';
+    }
 });
 
 document.getElementById('chat-menu-btn').addEventListener('click', () => { if (activeChatId) document.getElementById('modal-chat-menu').classList.remove('hidden'); });
@@ -475,7 +499,11 @@ document.getElementById('toggle-block-btn').addEventListener('click', () => { co
 document.getElementById('toggle-hide-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isHidden = true; saveData(); renderFriends(); showNotification("非表示にしたよ"); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
 document.getElementById('delete-friend-btn').addEventListener('click', () => { const room = chats[activeChatId]; delete friends[room.name]; delete chats[activeChatId]; saveData(); renderFriends(); updateChatListUI(); showNotification("削除したよ"); document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
 
-document.getElementById('stamp-toggle-btn').addEventListener('click', () => { document.getElementById('stamp-picker').classList.toggle('hidden'); renderStamps(); });
+document.getElementById('stamp-toggle-btn').addEventListener('click', () => {
+    document.getElementById('stamp-picker').classList.toggle('hidden');
+    document.getElementById('attachment-menu').classList.add('hidden');
+    renderStamps();
+});
 function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')">`).join(''); }
 function sendStamp(stampUrl) { sendMessageInternal(`[STAMP]:${stampUrl}`); document.getElementById('stamp-picker').classList.add('hidden'); }
 
@@ -485,7 +513,9 @@ document.getElementById('save-custom-stamp-btn').addEventListener('click', async
     if (fileInput.files.length > 0) {
         const rawBase64 = await readFileAsBase64(fileInput.files[0]);
         const compressedBase64 = await resizeImage(rawBase64, 120, 120);
-        stamps.push(compressedBase64); saveData(); renderStamps();
+        stamps.push(compressedBase64);
+        saveData();
+        renderStamps();
         showNotification("自作スタンプを追加したよ！");
         document.getElementById('modal-custom-stamp').classList.add('hidden');
     }
@@ -499,9 +529,30 @@ async function sendMessageInternal(msgText) {
 document.getElementById('send-btn').addEventListener('click', () => { const input = document.getElementById('message-input'); const text = input.value.trim(); if (text) { sendMessageInternal(text); input.value = ''; } });
 document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { const text = e.target.value.trim(); if (text) { sendMessageInternal(text); e.target.value = ''; } } });
 
+// コンテキストメニュー（長押し/右クリックでコピー＆取り消し）
+const ctxMenu = document.getElementById('msg-context-menu');
+document.addEventListener('click', () => ctxMenu.classList.add('hidden'));
+
+document.getElementById('ctx-copy-btn').addEventListener('click', () => {
+    if (selectedMsgTarget) {
+        navigator.clipboard.writeText(selectedMsgTarget.text);
+        showNotification("コピーしました！");
+    }
+});
+
+document.getElementById('ctx-delete-btn').addEventListener('click', async () => {
+    if (selectedMsgTarget && selectedMsgTarget.id) {
+        await supabaseClient.from('messages').delete().eq('id', selectedMsgTarget.id);
+        showNotification("送信を取り消しました");
+    }
+});
+
 function addMessageToScreen(data) {
     const messagesDiv = document.getElementById('messages'); const isMe = data.username === myUser.name;
-    const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me' : 'other'}`;
+    const group = document.createElement('div');
+    group.className = `message-group ${isMe ? 'me' : 'other'}`;
+    if (data.id) group.setAttribute('data-msg-id', data.id);
+
     const avatarImg = document.createElement('img'); avatarImg.className = 'msg-avatar'; avatarImg.src = data.avatar || "https://via.placeholder.com/30";
     const content = document.createElement('div'); content.className = 'msg-content';
 
@@ -513,14 +564,30 @@ function addMessageToScreen(data) {
 
     const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper';
 
+    // 長押し / コンテキストメニュー処理
+    const handleContextMenu = (e) => {
+        e.preventDefault();
+        selectedMsgTarget = { id: data.id, text: data.message };
+        ctxMenu.style.top = `${e.clientY}px`;
+        ctxMenu.style.left = `${e.clientX}px`;
+        ctxMenu.classList.remove('hidden');
+        document.getElementById('ctx-delete-btn').style.display = isMe ? 'block' : 'none';
+    };
+
     if (data.message.startsWith('[STAMP]:')) {
         const stampUrl = data.message.replace('[STAMP]:', '');
         const stampImg = document.createElement('img'); stampImg.className = 'stamp-img'; stampImg.src = stampUrl;
+        stampImg.addEventListener('contextmenu', handleContextMenu);
         wrapper.appendChild(stampImg);
+    } else if (data.message.startsWith('[FILE]:')) {
+        const fileObj = JSON.parse(data.message.replace('[FILE]:', ''));
+        const fileBox = document.createElement('div');
+        fileBox.className = 'file-bubble';
+        fileBox.innerHTML = `📄 <b>${fileObj.name}</b><br><a href="${fileObj.data}" download="${fileObj.name}" class="file-dl-link">💾 ダウンロード</a>`;
+        fileBox.addEventListener('contextmenu', handleContextMenu);
+        wrapper.appendChild(fileBox);
     } else {
         const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.innerText = data.message;
-        
-        // 【超機能】設定された吹き出しのカスタムスタイルを動的に適用！
         if (isMe) {
             bubble.style.backgroundColor = appSettings.bubbleColor;
             bubble.style.borderRadius = appSettings.bubbleShape;
@@ -529,12 +596,13 @@ function addMessageToScreen(data) {
             bubble.style.borderRadius = appSettings.bubbleShape;
             bubble.style.borderTopLeftRadius = "2px";
         }
+        bubble.addEventListener('contextmenu', handleContextMenu);
         wrapper.appendChild(bubble);
     }
 
     const msgDate = data.created_at ? new Date(data.created_at) : new Date();
     const timeText = document.createElement('span'); timeText.className = 'time';
-    timeText.innerText = `${msgDate.getHours().toString().padStart(2, '0')}:${msgDate.getMinutes().toString().padStart(2, '0')}`;
+    timeText.innerHTML = `${isMe ? '<span class="read-mark">既読 </span>' : ''}${msgDate.getHours().toString().padStart(2, '0')}:${msgDate.getMinutes().toString().padStart(2, '0')}`;
     
     wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content);
     messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
