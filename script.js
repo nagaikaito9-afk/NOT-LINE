@@ -1,9 +1,10 @@
-// ★SupabaseのURLとPublishable Keyを設定済み！
+// ★Supabaseの設定
 const SUPABASE_URL = "https://snxfgzqvnafsnrqrhgbh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_aTck43w4EIMBhdUiz_sqJg_Mohv4YHc";
 const GOOGLE_CLIENT_ID = "56462276148-q2n8gpnaphi48gjq7is0i07dtr4ger0v.apps.googleusercontent.com";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// 変数名を 'supabase' から 'supabaseClient' に変更して名前の衝突を回避！
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let myUser = JSON.parse(localStorage.getItem('notline_myUser')) || null;
 let friends = JSON.parse(localStorage.getItem('notline_friends')) || {};
@@ -99,11 +100,21 @@ function handleCredentialResponse(response) {
     showNotification(`${userData.name} としてログインしたよ！`);
 }
 
-window.onload = function () {
+// Googleログインを安全に読み込む処理
+function initGoogleLogin() {
     if (typeof google !== 'undefined') {
         google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse });
-        google.accounts.id.renderButton(document.getElementById("google-btn-container"), { theme: "outline", size: "large", width: "250" });
+        google.accounts.id.renderButton(
+            document.getElementById("google-btn-container"), 
+            { theme: "outline", size: "large", width: "250" }
+        );
+    } else {
+        setTimeout(initGoogleLogin, 300);
     }
+}
+
+window.onload = function () {
+    initGoogleLogin();
 
     if (myUser) {
         completeLogin(myUser.name, myUser.avatar);
@@ -235,8 +246,8 @@ async function openChatRoom(roomId) {
     document.getElementById('main-screen').classList.add('hidden');
     chatScreen.classList.remove('hidden');
 
-    // Supabaseから過去メッセージを取得して表示
-    const { data: pastMessages, error } = await supabase
+    // 1. Supabaseから過去メッセージを取得
+    const { data: pastMessages, error } = await supabaseClient
         .from('messages')
         .select('*')
         .eq('channel', roomId)
@@ -247,11 +258,11 @@ async function openChatRoom(roomId) {
     }
 
     if (currentSubscription) {
-        supabase.removeChannel(currentSubscription);
+        supabaseClient.removeChannel(currentSubscription);
     }
 
-    // リアルタイム通信の監視スタート
-    currentSubscription = supabase
+    // 2. リアルタイムリスナーを開始
+    currentSubscription = supabaseClient
         .channel(`room:${roomId}`)
         .on('postgres_changes', {
             event: 'INSERT',
@@ -301,7 +312,7 @@ function updateChatListUI() {
 }
 
 document.getElementById('back-btn').addEventListener('click', () => {
-    if (currentSubscription) supabase.removeChannel(currentSubscription);
+    if (currentSubscription) supabaseClient.removeChannel(currentSubscription);
     activeChatId = null;
     document.getElementById('chat-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
@@ -363,7 +374,7 @@ document.getElementById('save-custom-stamp-btn').addEventListener('click', async
 async function sendMessageInternal(msgText) {
     if (!msgText || !activeChatId) return;
     
-    await supabase.from('messages').insert([
+    await supabaseClient.from('messages').insert([
         {
             channel: activeChatId,
             username: myUser.name,
@@ -399,10 +410,12 @@ function addMessageToScreen(data) {
         wrapper.appendChild(bubble);
     }
 
-    const timeSpan = document.createElement('span'); timeSpan.className = 'time';
+    const timeSpan = document.className = 'time';
     const msgDate = data.created_at ? new Date(data.created_at) : new Date();
-    timeSpan.innerText = `${msgDate.getHours().toString().padStart(2, '0')}:${msgDate.getMinutes().toString().padStart(2, '0')}`;
+    const timeText = document.createElement('span');
+    timeText.className = 'time';
+    timeText.innerText = `${msgDate.getHours().toString().padStart(2, '0')}:${msgDate.getMinutes().toString().padStart(2, '0')}`;
     
-    wrapper.appendChild(timeSpan); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content);
+    wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content);
     messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
