@@ -6,10 +6,9 @@
     <title>Messaging app</title>
 
     <link rel="icon" href="favicon.png" type="image/png">
-    
     <link rel="apple-touch-icon" href="favicon.png">
-
     <link rel="stylesheet" href="style.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -37,7 +36,7 @@
 
             <div class="my-profile-container" id="my-profile-bg">
                 <div class="my-profile">
-                    <img id="my-avatar" src="https://via.placeholder.com/50" class="avatar">
+                    <img id="my-avatar" src="https://via.placeholder.com/50" class="avatar" alt="avatar">
                     <div class="profile-info">
                         <span id="my-name-display" class="profile-name">ユーザー名</span>
                         <span id="edit-profile-trigger" class="edit-profile-btn">プロフィール編集</span>
@@ -235,7 +234,6 @@
         <div id="modal-settings" class="modal hidden">
             <div class="modal-content">
                 <h3>アプリ設定</h3>
-                
                 <div class="setting-item">
                     <label>フォント設定</label>
                     <select id="font-select">
@@ -245,12 +243,10 @@
                         <option value="'Courier New', monospace">等幅 (レトロ)</option>
                     </select>
                 </div>
-
                 <div class="setting-item">
                     <label>自分の吹き出しカラー</label>
                     <input type="color" id="bubble-color-picker" value="#85E249">
                 </div>
-
                 <div class="setting-item">
                     <label>吹き出しの角の丸み</label>
                     <select id="bubble-shape-select">
@@ -259,11 +255,9 @@
                         <option value="25px">カプセル型</option>
                     </select>
                 </div>
-
                 <div class="setting-item">
                     <button id="request-notification-btn" class="btn-small">🔔 デスクトップ通知を許可する</button>
                 </div>
-
                 <div class="modal-buttons">
                     <button class="btn-secondary closeModal">閉じる</button>
                 </div>
@@ -276,12 +270,10 @@
                 <div id="call-user-info">
                     <span id="call-target-display" style="font-size: 18px; font-weight: bold;">相手の名前</span>
                 </div>
-                
                 <div id="video-container" class="hidden">
                     <video id="remote-video" autoplay playsinline></video>
                     <video id="local-video" autoplay playsinline muted></video>
                 </div>
-
                 <div class="modal-buttons" style="margin-top: 20px;">
                     <button id="accept-call-btn" class="btn-primary hidden">出る</button>
                     <button id="hangup-call-btn" class="btn-secondary danger" style="background:#ff4d4f; color:white;">切る</button>

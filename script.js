@@ -23,10 +23,10 @@ let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
 ];
 let activeChatId = null;
 let currentSubscription = null;
-let selectedMsgTarget = null; // コンテキストメニュー対象
-let pendingGoogleUser = null; // 初回ログイン一時保持用
+let selectedMsgTarget = null; 
+let pendingGoogleUser = null; 
 
-// WebRTC / 通話機能用の変数
+// WebRTC 用の変数
 let localStream = null;
 let peerConnection = null;
 let callSession = {
@@ -34,7 +34,8 @@ let callSession = {
     roomId: null,
     caller: null,
     callee: null,
-    type: 'audio'
+    type: 'audio',
+    remoteSdp: null
 };
 const rtcConfig = {
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -61,6 +62,47 @@ function saveData() {
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
 }
 
+// Supabase DBへ同期する処理
+async function syncUserToSupabase() {
+    if (!myUser || !myUser.googleId) return;
+    try {
+        const { error } = await supabaseClient
+            .from('users')
+            .upsert({
+                id: myUser.googleId,
+                name: myUser.name,
+                avatar: myUser.avatar,
+                profile_bg: myUser.profileBg,
+                updated_at: new Date().toISOString()
+            });
+        if (error) console.error("Supabase Sync Error:", error);
+    } catch (e) {
+        console.error("DB Connection Failed:", e);
+    }
+}
+
+// Supabase DBからデータを復元
+async function fetchUserFromSupabase(googleId) {
+    try {
+        const { data, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('id', googleId)
+            .single();
+        if (!error && data) {
+            return {
+                name: data.name,
+                avatar: data.avatar,
+                googleId: data.id,
+                profileBg: data.profile_bg
+            };
+        }
+    } catch (e) {
+        console.error(e);
+    }
+    return null;
+}
+
 function sendAppNotification(title, body) {
     if (Notification.permission === "granted") {
         new Notification(title, { body: body, icon: myUser ? myUser.avatar : "" });
@@ -69,9 +111,12 @@ function sendAppNotification(title, body) {
 }
 
 function showNotification(msg) {
-    let toast = document.getElementById('toast-notification') || document.createElement('div');
-    toast.id = 'toast-notification';
-    document.getElementById('app-container').appendChild(toast);
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-notification';
+        document.getElementById('app-container').appendChild(toast);
+    }
     toast.innerText = msg;
     toast.className = 'show';
     setTimeout(() => toast.classList.remove('show'), 2500);
@@ -99,18 +144,17 @@ function resizeImage(base64Str, maxWidth = 300, maxHeight = 300) {
             const canvas = document.createElement('canvas');
             let width = img.width;
             let height = img.height;
-
             if (width > height) {
                 if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
             } else {
                 if (height > maxHeight) { width = Math.round((width * maxHeight) / height); height = maxHeight; }
             }
-
             canvas.width = width; canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
             resolve(canvas.toDataURL('image/jpeg', 0.4));
         };
+        img.onerror = () => resolve(base64Str);
     });
 }
 
@@ -123,11 +167,18 @@ function parseJwt(token) {
     return JSON.parse(jsonPayload);
 }
 
-function handleCredentialResponse(response) {
+async function handleCredentialResponse(response) {
     const userData = parseJwt(response.credential);
     const googleId = userData.sub;
 
-    if (myUser && myUser.googleId === googleId) {
+    // 1. まずDBから最新の保存情報を取得してみる
+    const remoteUser = await fetchUserFromSupabase(googleId);
+
+    if (remoteUser) {
+        myUser = remoteUser;
+        completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
+        showNotification(`${myUser.name} としてログインしたよ！`);
+    } else if (myUser && myUser.googleId === googleId) {
         completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
         showNotification(`${myUser.name} としてログインしたよ！`);
     } else {
@@ -141,7 +192,7 @@ function handleCredentialResponse(response) {
     }
 }
 
-document.getElementById('save-first-name-btn').addEventListener('click', () => {
+document.getElementById('save-first-name-btn').addEventListener('click', async () => {
     const inputName = document.getElementById('first-name-input').value.trim();
     if (!inputName) {
         showNotification("名前を入力してください！");
@@ -197,17 +248,16 @@ window.onload = function () {
 };
 
 function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
-    if (!myUser || myUser.googleId !== googleId) {
-        myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
-    } else {
-        myUser.avatar = avatarUrl || myUser.avatar;
-    }
+    myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
     saveData();
+    syncUserToSupabase(); // 永続化同期
 
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
     if (myUser.profileBg) {
         document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
+    } else {
+        document.getElementById('my-profile-bg').style.backgroundImage = 'none';
     }
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
@@ -254,6 +304,7 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
         document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
     }
     saveData();
+    await syncUserToSupabase();
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
     document.getElementById('modal-profile').classList.add('hidden');
@@ -283,18 +334,23 @@ function renderStories() {
     stories = stories.filter(s => (now - s.timestamp) < 86400000);
     saveData();
     if (stories.length === 0) {
-        area.innerHTML = `<p style="color:#aaa;">投稿されたストーリーはありません（24時間で消えるよ）</p>`;
+        area.innerHTML = `<p style="color:#aaa;">投稿されたストーリーはありません</p>`;
         return;
     }
     area.innerHTML = stories.map(s => `
         <div class="story-item">
-            <div class="story-user"><img src="${s.avatar}" class="msg-avatar"><span>${s.username}</span></div>
-            <img src="${s.image}" class="story-img">
+            <div class="story-user"><img src="${s.avatar}" class="msg-avatar" alt=""><span>${s.username}</span></div>
+            <img src="${s.image}" class="story-img" alt="">
         </div>
     `).join('');
 }
 
 document.getElementById('logout-btn').addEventListener('click', () => {
+    endCallState();
+    if (currentSubscription) {
+        supabaseClient.removeChannel(currentSubscription);
+        currentSubscription = null;
+    }
     document.getElementById('main-screen').classList.add('hidden');
     document.getElementById('chat-screen').classList.add('hidden');
     document.getElementById('login-screen').classList.remove('hidden');
@@ -322,7 +378,7 @@ document.getElementById('type-friend-btn').addEventListener('click', (e) => {
 
 document.getElementById('type-group-btn').addEventListener('click', (e) => {
     e.target.classList.add('active'); document.getElementById('type-friend-btn').classList.remove('active');
-    document.getElementById('form-add-friend').classList.remove('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
+    document.getElementById('form-add-friend').classList.add('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
     const container = document.getElementById('group-member-select');
     container.innerHTML = Object.keys(friends).map(id => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
 });
@@ -381,8 +437,15 @@ function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members =
 }
 
 async function openChatRoom(roomId) {
+    // 既存チャンネルの完全購読解除（メモリ・リスナーリーク防止）
+    if (currentSubscription) {
+        await supabaseClient.removeChannel(currentSubscription);
+        currentSubscription = null;
+    }
+
     activeChatId = roomId;
     const room = chats[roomId];
+    if(!room) return;
     room.unread = 0;
     updateChatListUI();
 
@@ -405,10 +468,9 @@ async function openChatRoom(roomId) {
         pastMessages.forEach(msg => addMessageToScreen(msg));
     }
 
-    if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); }
-
-    currentSubscription = supabaseClient
-        .channel(`room:${roomId}`)
+    currentSubscription = supabaseClient.channel(`room:${roomId}`);
+    
+    currentSubscription
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `channel=eq.${roomId}` }, payload => {
             if (payload.eventType === 'INSERT') {
                 const newMsg = payload.new;
@@ -421,7 +483,6 @@ async function openChatRoom(roomId) {
                     document.getElementById('chat-screen').style.backgroundImage = `url(${bgData})`;
                     return;
                 }
-
                 if (newMsg.username !== myUser.name) {
                     sendAppNotification(newMsg.username, newMsg.message.startsWith('[STAMP]:') ? "スタンプが届きました" : newMsg.message);
                 }
@@ -434,7 +495,11 @@ async function openChatRoom(roomId) {
         .on('broadcast', { event: 'call-signal' }, payload => {
             handleCallSignaling(payload.payload);
         })
-        .subscribe();
+        .subscribe((status) => {
+            if(status === 'SUBSCRIBED') {
+                console.log("Supabase Realtime Subscribed for room:", roomId);
+            }
+        });
 }
 
 function renderFriends() {
@@ -444,7 +509,7 @@ function renderFriends() {
         const displayName = f.nickname ? `${f.nickname} (${f.name})` : f.name;
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => { const pair = [myUser.name, f.name].sort(); openChatRoom(`chat_${pair[0]}_${pair[1]}`); };
-        li.innerHTML = `<img src="${f.avatar}" class="avatar"><div class="item-info"><div class="item-title">${displayName}</div></div>`;
+        li.innerHTML = `<img src="${f.avatar}" class="avatar" alt=""><div class="item-info"><div class="item-title">${displayName}</div></div>`;
         list.appendChild(li);
     });
 }
@@ -455,15 +520,19 @@ function updateChatListUI() {
         const room = chats[roomId]; totalUnread += room.unread;
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
+        li.innerHTML = `<img src="${room.avatar}" class="avatar" alt=""><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
         list.appendChild(li);
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
 }
 
-document.getElementById('back-btn').addEventListener('click', () => {
-    if (currentSubscription) supabaseClient.removeChannel(currentSubscription);
+document.getElementById('back-btn').addEventListener('click', async () => {
+    endCallState();
+    if (currentSubscription) {
+        await supabaseClient.removeChannel(currentSubscription);
+        currentSubscription = null;
+    }
     activeChatId = null;
     document.getElementById('chat-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
@@ -474,12 +543,8 @@ document.getElementById('attach-toggle-btn').addEventListener('click', () => {
     document.getElementById('stamp-picker').classList.add('hidden');
 });
 
-document.getElementById('attach-file-trigger').addEventListener('click', () => {
-    document.getElementById('chat-file-input').click();
-});
-document.getElementById('attach-image-trigger').addEventListener('click', () => {
-    document.getElementById('chat-image-input').click();
-});
+document.getElementById('attach-file-trigger').addEventListener('click', () => { document.getElementById('chat-file-input').click(); });
+document.getElementById('attach-image-trigger').addEventListener('click', () => { document.getElementById('chat-image-input').click(); });
 
 document.getElementById('chat-file-input').addEventListener('change', async (e) => {
     if (e.target.files.length > 0 && activeChatId) {
@@ -533,17 +598,17 @@ document.getElementById('set-nickname-btn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('toggle-mute-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isMuted = !friends[room.name].isMuted; saveData(); showNotification(friends[room.name].isMuted ? "ミュートにしたよ" : "ミュート解除したよ"); } document.getElementById('modal-chat-menu').classList.add('hidden'); });
-document.getElementById('toggle-block-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isBlocked = !friends[room.name].isBlocked; saveData(); showNotification(friends[room.name].isBlocked ? "ブロックしたよ" : "ブロック解除したよ"); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
-document.getElementById('toggle-hide-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isHidden = true; saveData(); renderFriends(); showNotification("非表示にしたよ"); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
-document.getElementById('delete-friend-btn').addEventListener('click', () => { const room = chats[activeChatId]; delete friends[room.name]; delete chats[activeChatId]; saveData(); renderFriends(); updateChatListUI(); showNotification("削除したよ"); document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
+document.getElementById('toggle-mute-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isMuted = !friends[room.name].isMuted; saveData(); showNotification(friends[room.name].isMuted ? "mute" : "unmute"); } document.getElementById('modal-chat-menu').classList.add('hidden'); });
+document.getElementById('toggle-block-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isBlocked = !friends[room.name].isBlocked; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
+document.getElementById('toggle-hide-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isHidden = true; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
+document.getElementById('delete-friend-btn').addEventListener('click', () => { const room = chats[activeChatId]; delete friends[room.name]; delete chats[activeChatId]; saveData(); renderFriends(); updateChatListUI(); document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
 
 document.getElementById('stamp-toggle-btn').addEventListener('click', () => {
     document.getElementById('stamp-picker').classList.toggle('hidden');
     document.getElementById('attachment-menu').classList.add('hidden');
     renderStamps();
 });
-function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')">`).join(''); }
+function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')" alt="">`).join(''); }
 function sendStamp(stampUrl) { sendMessageInternal(`[STAMP]:${stampUrl}`); document.getElementById('stamp-picker').classList.add('hidden'); }
 
 document.getElementById('add-custom-stamp-trigger').addEventListener('click', () => { document.getElementById('modal-custom-stamp').classList.remove('hidden'); });
@@ -586,7 +651,9 @@ document.getElementById('ctx-delete-btn').addEventListener('click', async () => 
 });
 
 function addMessageToScreen(data) {
-    const messagesDiv = document.getElementById('messages'); const isMe = data.username === myUser.name;
+    const messagesDiv = document.getElementById('messages'); 
+    if(!messagesDiv) return;
+    const isMe = data.username === myUser.name;
     const group = document.createElement('div');
     group.className = `message-group ${isMe ? 'me' : 'other'}`;
     if (data.id) group.setAttribute('data-msg-id', data.id);
@@ -617,12 +684,14 @@ function addMessageToScreen(data) {
         stampImg.addEventListener('contextmenu', handleContextMenu);
         wrapper.appendChild(stampImg);
     } else if (data.message.startsWith('[FILE]:')) {
-        const fileObj = JSON.parse(data.message.replace('[FILE]:', ''));
-        const fileBox = document.createElement('div');
-        fileBox.className = 'file-bubble';
-        fileBox.innerHTML = `📄 <b>${fileObj.name}</b><br><a href="${fileObj.data}" download="${fileObj.name}" class="file-dl-link">💾 ダウンロード</a>`;
-        fileBox.addEventListener('contextmenu', handleContextMenu);
-        wrapper.appendChild(fileBox);
+        try {
+            const fileObj = JSON.parse(data.message.replace('[FILE]:', ''));
+            const fileBox = document.createElement('div');
+            fileBox.className = 'file-bubble';
+            fileBox.innerHTML = `📄 <b>${fileObj.name}</b><br><a href="${fileObj.data}" download="${fileObj.name}" class="file-dl-link">💾 ダウンロード</a>`;
+            fileBox.addEventListener('contextmenu', handleContextMenu);
+            wrapper.appendChild(fileBox);
+        } catch(e) { console.error("Malformed file bubble json", e); }
     } else {
         const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.innerText = data.message;
         if (isMe) {
@@ -646,14 +715,14 @@ function addMessageToScreen(data) {
 }
 
 // -------------------------------------------------------------
-// ★ WebRTC シグナリング・通話コントロール処理ロジック
+// ★ WebRTC シグナリング・通話コントロール（バグ完全修正版）
 // -------------------------------------------------------------
 document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
 document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
 document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
 document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
 
-function handleCallSignaling(payload) {
+async function handleCallSignaling(payload) {
     const { event, from, to, type, sdp, candidate } = payload;
     if (to !== myUser.name) return;
 
@@ -662,20 +731,22 @@ function handleCallSignaling(payload) {
             sendSignalingMessage({ event: 'call-rejected', from: myUser.name, to: from });
             return;
         }
-        callSession = { active: true, roomId: activeChatId, caller: from, callee: myUser.name, type: type };
+        callSession = { active: true, roomId: activeChatId, caller: from, callee: myUser.name, type: type, remoteSdp: sdp };
         showCallModal('incoming');
-        // オファーSDPを保持
-        callSession.remoteSdp = sdp;
     } 
     else if (event === 'call-answer') {
         if (peerConnection) {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-            document.getElementById('call-status').innerText = "通話中";
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+                document.getElementById('call-status').innerText = "通話中";
+            } catch(e) { console.error("Error setting remote description:", e); }
         }
     } 
     else if (event === 'call-candidate') {
         if (peerConnection && candidate) {
-            peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error(e));
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch(e) { console.warn("ICE candidate addition skipped:", e); }
         }
     } 
     else if (event === 'call-hangup') {
@@ -705,7 +776,7 @@ async function startCall(type) {
     }
     const targetName = chats[activeChatId].name;
     
-    callSession = { active: true, roomId: activeChatId, caller: myUser.name, callee: targetName, type: type };
+    callSession = { active: true, roomId: activeChatId, caller: myUser.name, callee: targetName, type: type, remoteSdp: null };
     showCallModal('outgoing');
 
     try {
@@ -731,8 +802,8 @@ async function startCall(type) {
             sdp: offer
         });
     } catch (err) {
-        console.error("メディアストリーム取得失敗:", err);
-        showNotification("カメラまたはマイクへのアクセス許可がありません");
+        console.error(err);
+        showNotification("カメラ・マイクにアクセスできません");
         hangupCall();
     }
 }
@@ -767,12 +838,15 @@ async function acceptCall() {
             document.getElementById('call-status').innerText = "通話中";
         }
     } catch (err) {
-        console.error("応答エラー:", err);
+        console.error("Answer Call Error:", err);
         hangupCall();
     }
 }
 
 function setupPeerConnection(type) {
+    if(peerConnection) {
+        peerConnection.close();
+    }
     peerConnection = new RTCPeerConnection(rtcConfig);
 
     localStream.getTracks().forEach(track => {
@@ -781,7 +855,7 @@ function setupPeerConnection(type) {
 
     peerConnection.ontrack = (event) => {
         const remoteVideo = document.getElementById('remote-video');
-        if (remoteVideo.srcObject !== event.streams[0]) {
+        if (remoteVideo && remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
         }
     };
@@ -815,9 +889,13 @@ function endCallState() {
         peerConnection = null;
     }
     callSession.active = false;
+    callSession.remoteSdp = null;
     document.getElementById('modal-call').classList.add('hidden');
-    document.getElementById('remote-video').srcObject = null;
-    document.getElementById('local-video').srcObject = null;
+    
+    const rv = document.getElementById('remote-video');
+    const lv = document.getElementById('local-video');
+    if(rv) rv.srcObject = null;
+    if(lv) lv.srcObject = null;
 }
 
 function showCallModal(mode) {
