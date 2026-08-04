@@ -26,6 +26,20 @@ let currentSubscription = null;
 let selectedMsgTarget = null; // コンテキストメニュー対象
 let pendingGoogleUser = null; // 初回ログイン一時保持用
 
+// WebRTC / 通話機能用の変数
+let localStream = null;
+let peerConnection = null;
+let callSession = {
+    active: false,
+    roomId: null,
+    caller: null,
+    callee: null,
+    type: 'audio'
+};
+const rtcConfig = {
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
 function saveData() {
     if (myUser) localStorage.setItem('notline_myUser', JSON.stringify(myUser));
     localStorage.setItem('notline_friends', JSON.stringify(friends));
@@ -109,18 +123,14 @@ function parseJwt(token) {
     return JSON.parse(jsonPayload);
 }
 
-// Googleログイン成功時の処理
 function handleCredentialResponse(response) {
     const userData = parseJwt(response.credential);
-    const googleId = userData.sub; // Googleアカウント固有ID
+    const googleId = userData.sub;
 
-    // すでにローカルストレージに同じGoogle IDでログインしたデータがあるか確認
     if (myUser && myUser.googleId === googleId) {
-        // 2回目以降：既存のユーザー名やプロフィール画像を保持したままログイン
         completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
         showNotification(`${myUser.name} としてログインしたよ！`);
     } else {
-        // 初回ログイン：Google情報を受け取り、名前入力モーダルを表示
         pendingGoogleUser = {
             googleId: googleId,
             defaultName: userData.name,
@@ -131,7 +141,6 @@ function handleCredentialResponse(response) {
     }
 }
 
-// 初回名前決定ボタンの処理
 document.getElementById('save-first-name-btn').addEventListener('click', () => {
     const inputName = document.getElementById('first-name-input').value.trim();
     if (!inputName) {
@@ -182,7 +191,6 @@ window.onload = function () {
     document.getElementById('bubble-color-picker').value = appSettings.bubbleColor;
     document.getElementById('bubble-shape-select').value = appSettings.bubbleShape;
 
-    // 自動ログイン（保存データがある場合）
     if (myUser && myUser.name) {
         completeLogin(myUser.name, myUser.avatar, myUser.googleId, myUser.profileBg);
     }
@@ -192,7 +200,6 @@ function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
     if (!myUser || myUser.googleId !== googleId) {
         myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
     } else {
-        // 名前が変更されている場合は変更後の名前を維持
         myUser.avatar = avatarUrl || myUser.avatar;
     }
     saveData();
@@ -205,7 +212,6 @@ function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
 
-    // トークルームの読み込み
     chats = {};
     Object.keys(chatsData).forEach(roomId => {
         const room = chatsData[roomId];
@@ -216,7 +222,6 @@ function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
     updateChatListUI();
 }
 
-// 通知許可
 document.getElementById('request-notification-btn').addEventListener('click', () => {
     if (!("Notification" in window)) { showNotification("非対応ブラウザです"); return; }
     Notification.requestPermission().then(permission => {
@@ -228,7 +233,6 @@ document.getElementById('font-select').addEventListener('change', (e) => { appSe
 document.getElementById('bubble-color-picker').addEventListener('change', (e) => { appSettings.bubbleColor = e.target.value; saveData(); });
 document.getElementById('bubble-shape-select').addEventListener('change', (e) => { appSettings.bubbleShape = e.target.value; saveData(); });
 
-// プロフィール保存
 document.getElementById('edit-profile-trigger').addEventListener('click', () => {
     document.getElementById('edit-name-input').value = myUser.name;
     document.getElementById('modal-profile').classList.remove('hidden');
@@ -256,7 +260,6 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     showNotification("プロフィールを更新したよ！");
 });
 
-// ストーリー
 document.getElementById('story-btn').addEventListener('click', () => {
     document.getElementById('modal-story').classList.remove('hidden');
     renderStories();
@@ -324,7 +327,6 @@ document.getElementById('type-group-btn').addEventListener('click', (e) => {
     container.innerHTML = Object.keys(friends).map(id => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
 });
 
-// フレンド追加
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const friendName = document.getElementById('friend-id-input').value.trim();
     const nickname = document.getElementById('friend-nickname-input').value.trim();
@@ -356,7 +358,6 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     fileInput.value = '';
 });
 
-// グループ作成
 document.getElementById('create-group-submit').addEventListener('click', () => {
     const groupName = document.getElementById('group-name-input').value.trim();
     if (!groupName) { showNotification("グループ名を入力してね"); return; }
@@ -429,6 +430,9 @@ async function openChatRoom(roomId) {
                 const deletedElem = document.querySelector(`[data-msg-id="${payload.old.id}"]`);
                 if (deletedElem) deletedElem.remove();
             }
+        })
+        .on('broadcast', { event: 'call-signal' }, payload => {
+            handleCallSignaling(payload.payload);
         })
         .subscribe();
 }
@@ -639,4 +643,204 @@ function addMessageToScreen(data) {
     
     wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content);
     messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// -------------------------------------------------------------
+// ★ WebRTC シグナリング・通話コントロール処理ロジック
+// -------------------------------------------------------------
+document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
+document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
+document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
+document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
+
+function handleCallSignaling(payload) {
+    const { event, from, to, type, sdp, candidate } = payload;
+    if (to !== myUser.name) return;
+
+    if (event === 'call-offer') {
+        if (callSession.active) {
+            sendSignalingMessage({ event: 'call-rejected', from: myUser.name, to: from });
+            return;
+        }
+        callSession = { active: true, roomId: activeChatId, caller: from, callee: myUser.name, type: type };
+        showCallModal('incoming');
+        // オファーSDPを保持
+        callSession.remoteSdp = sdp;
+    } 
+    else if (event === 'call-answer') {
+        if (peerConnection) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+            document.getElementById('call-status').innerText = "通話中";
+        }
+    } 
+    else if (event === 'call-candidate') {
+        if (peerConnection && candidate) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => console.error(e));
+        }
+    } 
+    else if (event === 'call-hangup') {
+        endCallState();
+        showNotification("通話が終了しました");
+    }
+    else if (event === 'call-rejected') {
+        endCallState();
+        showNotification("相手が応答しないか、話し中です");
+    }
+}
+
+function sendSignalingMessage(data) {
+    if (currentSubscription) {
+        currentSubscription.send({
+            type: 'broadcast',
+            event: 'call-signal',
+            payload: data
+        });
+    }
+}
+
+async function startCall(type) {
+    if (!activeChatId || chats[activeChatId].isGroup) {
+        showNotification("グループ通話には対応していません");
+        return;
+    }
+    const targetName = chats[activeChatId].name;
+    
+    callSession = { active: true, roomId: activeChatId, caller: myUser.name, callee: targetName, type: type };
+    showCallModal('outgoing');
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: type === 'video'
+        });
+        
+        if (type === 'video') {
+            document.getElementById('local-video').srcObject = localStream;
+        }
+
+        setupPeerConnection(type);
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        sendSignalingMessage({
+            event: 'call-offer',
+            from: myUser.name,
+            to: targetName,
+            type: type,
+            sdp: offer
+        });
+    } catch (err) {
+        console.error("メディアストリーム取得失敗:", err);
+        showNotification("カメラまたはマイクへのアクセス許可がありません");
+        hangupCall();
+    }
+}
+
+async function acceptCall() {
+    document.getElementById('accept-call-btn').classList.add('hidden');
+    document.getElementById('call-status').innerText = "接続中...";
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: callSession.type === 'video'
+        });
+
+        if (callSession.type === 'video') {
+            document.getElementById('local-video').srcObject = localStream;
+        }
+
+        setupPeerConnection(callSession.type);
+
+        if (callSession.remoteSdp) {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(callSession.remoteSdp));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            sendSignalingMessage({
+                event: 'call-answer',
+                from: myUser.name,
+                to: callSession.caller,
+                sdp: answer
+            });
+            document.getElementById('call-status').innerText = "通話中";
+        }
+    } catch (err) {
+        console.error("応答エラー:", err);
+        hangupCall();
+    }
+}
+
+function setupPeerConnection(type) {
+    peerConnection = new RTCPeerConnection(rtcConfig);
+
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+
+    peerConnection.ontrack = (event) => {
+        const remoteVideo = document.getElementById('remote-video');
+        if (remoteVideo.srcObject !== event.streams[0]) {
+            remoteVideo.srcObject = event.streams[0];
+        }
+    };
+
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            const target = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
+            sendSignalingMessage({
+                event: 'call-candidate',
+                from: myUser.name,
+                to: target,
+                candidate: event.candidate
+            });
+        }
+    };
+}
+
+function hangupCall() {
+    const target = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
+    sendSignalingMessage({ event: 'call-hangup', from: myUser.name, to: target });
+    endCallState();
+}
+
+function endCallState() {
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    callSession.active = false;
+    document.getElementById('modal-call').classList.add('hidden');
+    document.getElementById('remote-video').srcObject = null;
+    document.getElementById('local-video').srcObject = null;
+}
+
+function showCallModal(mode) {
+    const modal = document.getElementById('modal-call');
+    const status = document.getElementById('call-status');
+    const targetDisplay = document.getElementById('call-target-display');
+    const acceptBtn = document.getElementById('accept-call-btn');
+    const videoContainer = document.getElementById('video-container');
+
+    targetDisplay.innerText = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
+    
+    if (callSession.type === 'video') {
+        videoContainer.classList.remove('hidden');
+    } else {
+        videoContainer.classList.add('hidden');
+    }
+
+    if (mode === 'outgoing') {
+        status.innerText = "発信中...";
+        acceptBtn.classList.add('hidden');
+    } else if (mode === 'incoming') {
+        status.innerText = `${callSession.type === 'video' ? 'ビデオ通話' : '音声通話'}の着信`;
+        acceptBtn.classList.remove('hidden');
+    }
+    modal.classList.remove('hidden');
 }

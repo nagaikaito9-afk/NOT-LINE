@@ -71,7 +71,11 @@
             <header>
                 <button id="back-btn">⬅</button>
                 <span id="chat-target-name">相手の名前</span>
-                <button class="header-icon-btn" id="chat-menu-btn">⋮</button>
+                <div class="header-right">
+                    <button class="header-icon-btn" id="call-audio-btn">📞</button>
+                    <button class="header-icon-btn" id="call-video-btn">📹</button>
+                    <button class="header-icon-btn" id="chat-menu-btn">⋮</button>
+                </div>
             </header>
 
             <div id="messages"></div>
@@ -262,6 +266,25 @@
 
                 <div class="modal-buttons">
                     <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-call" class="modal hidden">
+            <div class="modal-content call-modal-content">
+                <h3 id="call-status">通話中...</h3>
+                <div id="call-user-info">
+                    <span id="call-target-display" style="font-size: 18px; font-weight: bold;">相手の名前</span>
+                </div>
+                
+                <div id="video-container" class="hidden">
+                    <video id="remote-video" autoplay playsinline></video>
+                    <video id="local-video" autoplay playsinline muted></video>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 20px;">
+                    <button id="accept-call-btn" class="btn-primary hidden">出る</button>
+                    <button id="hangup-call-btn" class="btn-secondary danger" style="background:#ff4d4f; color:white;">切る</button>
                 </div>
             </div>
         </div>
