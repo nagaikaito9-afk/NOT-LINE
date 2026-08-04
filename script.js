@@ -11,7 +11,7 @@ let chatsData = JSON.parse(localStorage.getItem('notline_chats')) || {};
 let stories = JSON.parse(localStorage.getItem('notline_stories')) || [];
 let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     font: "system-ui",
-    bubbleColor: "#85E249",
+    bubbleColor: "#3b82f6",
     bubbleShape: "15px"
 };
 let chats = {};
@@ -62,7 +62,6 @@ function saveData() {
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
 }
 
-// Supabase DBへ同期する処理
 async function syncUserToSupabase() {
     if (!myUser || !myUser.googleId) return;
     try {
@@ -81,7 +80,6 @@ async function syncUserToSupabase() {
     }
 }
 
-// Supabase DBからデータを復元
 async function fetchUserFromSupabase(googleId) {
     try {
         const { data, error } = await supabaseClient
@@ -171,7 +169,6 @@ async function handleCredentialResponse(response) {
     const userData = parseJwt(response.credential);
     const googleId = userData.sub;
 
-    // 1. まずDBから最新の保存情報を取得してみる
     const remoteUser = await fetchUserFromSupabase(googleId);
 
     if (remoteUser) {
@@ -250,7 +247,7 @@ window.onload = function () {
 function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
     myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
     saveData();
-    syncUserToSupabase(); // 永続化同期
+    syncUserToSupabase();
 
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
@@ -275,7 +272,7 @@ function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
 document.getElementById('request-notification-btn').addEventListener('click', () => {
     if (!("Notification" in window)) { showNotification("非対応ブラウザです"); return; }
     Notification.requestPermission().then(permission => {
-        if (permission === "granted") sendAppNotification("Messaging app", "通知が有効になりました！🎉");
+        if (permission === "granted") sendAppNotification("NOT=LINE", "通知が有効になりました！🎉");
     });
 });
 
@@ -437,7 +434,6 @@ function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members =
 }
 
 async function openChatRoom(roomId) {
-    // 既存チャンネルの完全購読解除（メモリ・リスナーリーク防止）
     if (currentSubscription) {
         await supabaseClient.removeChannel(currentSubscription);
         currentSubscription = null;
@@ -598,7 +594,7 @@ document.getElementById('set-nickname-btn').addEventListener('click', () => {
     }
 });
 
-document.getElementById('toggle-mute-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isMuted = !friends[room.name].isMuted; saveData(); showNotification(friends[room.name].isMuted ? "mute" : "unmute"); } document.getElementById('modal-chat-menu').classList.add('hidden'); });
+document.getElementById('toggle-mute-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isMuted = !friends[room.name].isMuted; saveData(); showNotification(friends[room.name].isMuted ? "ミュートにしたよ" : "ミュート解除したよ"); } document.getElementById('modal-chat-menu').classList.add('hidden'); });
 document.getElementById('toggle-block-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isBlocked = !friends[room.name].isBlocked; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
 document.getElementById('toggle-hide-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isHidden = true; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
 document.getElementById('delete-friend-btn').addEventListener('click', () => { const room = chats[activeChatId]; delete friends[room.name]; delete chats[activeChatId]; saveData(); renderFriends(); updateChatListUI(); document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
@@ -715,7 +711,7 @@ function addMessageToScreen(data) {
 }
 
 // -------------------------------------------------------------
-// ★ WebRTC シグナリング・通話コントロール（バグ完全修正版）
+// WebRTC シグナリング・通話コントロール
 // -------------------------------------------------------------
 document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
 document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));

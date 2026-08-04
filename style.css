@@ -35,14 +35,15 @@ body {
 }
 .screen.hidden { display: none !important; }
 
-/* ログイン画面 */
-#login-screen { justify-content: center; align-items: center; background-color: #06C755; padding: 20px; }
+/* ログイン画面（緑 -> 青に変更） */
+#login-screen { justify-content: center; align-items: center; background-color: #007AFF; padding: 20px; }
 .login-box { background: white; padding: 40px 20px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-.login-box h2 { margin-top: 0; color: #06C755; font-size: 24px; }
+.login-box h2 { margin-top: 0; color: #007AFF; font-size: 24px; }
 .login-box p { font-size: 13px; color: #666; margin-bottom: 20px; }
 
+/* ヘッダー（緑 -> 青に変更） */
 header {
-    background-color: #06C755;
+    background-color: #007AFF;
     color: white;
     padding: 15px;
     text-align: center;
@@ -92,7 +93,7 @@ header {
 .avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; background-color: #fff; border: 2px solid white; }
 .profile-info { flex: 1; display: flex; flex-direction: column; }
 .profile-name { font-weight: bold; font-size: 16px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
-.edit-profile-btn { font-size: 11px; color: #a3ffc2; cursor: pointer; text-decoration: underline; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+.edit-profile-btn { font-size: 11px; color: #87cefa; cursor: pointer; text-decoration: underline; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 .logout-btn { background: rgba(255,77,79,0.9); border: none; color: white; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
 
 .tab-content { flex: 1; overflow-y: auto; display: none; }
@@ -109,10 +110,10 @@ header {
 
 #bottom-nav { display: flex; height: 55px; border-top: 1px solid #eee; background: #fafafa; }
 .nav-btn { flex: 1; border: none; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 10px; color: #888; cursor: pointer; position: relative; }
-.nav-btn.active { color: #06C755; }
+.nav-btn.active { color: #007AFF; }
 .nav-btn .icon { font-size: 18px; }
 
-#chat-screen { background-color: #7494c0; background-size: cover; background-position: center; transition: background 0.3s ease; }
+#chat-screen { background-color: #60a5fa; background-size: cover; background-position: center; transition: background 0.3s ease; }
 #messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 
 .message-group { display: flex; gap: 8px; max-width: 80%; }
@@ -127,19 +128,19 @@ header {
 .me .bubble-wrapper { flex-direction: row-reverse; }
 
 .bubble { padding: 8px 12px; border-radius: 15px; font-size: 13px; line-height: 1.4; word-break: break-all; cursor: pointer; }
-.me .bubble { background-color: #85E249; color: #000; border-top-right-radius: 2px; }
+.me .bubble { background-color: #3b82f6; color: #fff; border-top-right-radius: 2px; }
 .other .bubble { background-color: #FFF; color: #000; border-top-left-radius: 2px; }
 
 .file-bubble { background: #fff; padding: 10px 14px; border-radius: 12px; font-size: 12px; border: 1px solid #ddd; }
-.file-dl-link { display: inline-block; margin-top: 5px; color: #06C755; font-weight: bold; text-decoration: none; }
+.file-dl-link { display: inline-block; margin-top: 5px; color: #007AFF; font-weight: bold; text-decoration: none; }
 
-.read-mark { color: #a3ffc2; font-size: 9px; margin-right: 2px; }
+.read-mark { color: #87cefa; font-size: 9px; margin-right: 2px; }
 .stamp-img { width: 100px; height: 100px; object-fit: contain; cursor: pointer; }
 .time { font-size: 9px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
 
 #input-area { display: flex; padding: 8px 10px; background-color: #fff; gap: 6px; align-items: center; border-top: 1px solid #eee; }
 #message-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 18px; outline: none; font-size: 13px; }
-#send-btn { padding: 8px 15px; background-color: #06C755; color: white; border: none; border-radius: 18px; font-weight: bold; cursor: pointer; }
+#send-btn { padding: 8px 15px; background-color: #007AFF; color: white; border: none; border-radius: 18px; font-weight: bold; cursor: pointer; }
 .line-action-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #777; padding: 4px; }
 
 .attachment-menu { display: flex; gap: 20px; padding: 15px; background: #f9f9f9; border-top: 1px solid #ddd; justify-content: center; }
@@ -175,9 +176,9 @@ header {
 .modal-content input[type="text"], .modal-content select { width:100%; padding:8px; margin:8px 0; border:1px solid #ccc; border-radius:4px; font-size:13px; }
 
 .modal-buttons { display:flex; gap:8px; margin-top:12px; }
-.btn-primary { flex:1; background:#06C755; color:#fff; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; }
+.btn-primary { flex:1; background:#007AFF; color:#fff; border:none; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; }
 .btn-secondary { flex:1; background:#ccc; color:#333; border:none; padding:8px; border-radius:4px; cursor:pointer; }
-.btn-small { background: #06C755; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; }
+.btn-small { background: #007AFF; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; }
 
 .setting-item { display: flex; flex-direction: column; text-align: left; margin-bottom: 12px; font-size: 13px; color: #333; }
 .setting-item label { font-weight: bold; margin-bottom: 4px; }
@@ -194,7 +195,7 @@ header {
 .checkbox-list { max-height: 100px; overflow-y: auto; text-align: left; border: 1px solid #eee; padding: 5px; }
 .add-type-selector { display:flex; margin-bottom:10px; border-bottom:1px solid #eee; }
 .add-type-selector button { flex:1; padding:8px; border:none; background:none; cursor:pointer; }
-.add-type-selector button.active { border-bottom:2px solid #06C755; font-weight:bold; color:#06C755; }
+.add-type-selector button.active { border-bottom:2px solid #007AFF; font-weight:bold; color:#007AFF; }
 
 #toast-notification { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; transition: top 0.3s; z-index: 1000; }
 #toast-notification.show { top: 15px; }
