@@ -5,7 +5,6 @@ const GOOGLE_CLIENT_ID = "56462276148-q2n8gpnaphi48gjq7is0i07dtr4ger0v.apps.goog
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// 安全な標準アバター画像のインラインSVGデータ
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%23007AFF'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👤</text></svg>";
 
 let myUser = JSON.parse(localStorage.getItem('notline_myUser')) || null;
@@ -62,7 +61,7 @@ function saveData() {
 // Supabase DBからログインユーザー情報取得
 async function fetchUserFromSupabase(uid) {
     try {
-        const { data, error } = await supabaseClient.from('users').select('*').eq('id', uid).single();
+        const { data, error } = await supabaseClient.from('users').select('*').eq('id', uid).maybeSingle();
         if (!error && data) return data;
     } catch (e) { console.error(e); }
     return null;
@@ -145,7 +144,6 @@ async function handleCredentialResponse(response) {
     }
 }
 
-// Google ログインボタン初期化（リトライ＆エラー防止機能付）
 function initGoogleLogin() {
     if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
         try {
@@ -172,7 +170,7 @@ window.onload = function() {
     }
 };
 
-// ユーザー初期ID・名前決定処理
+// 【厳密修正】ID重複チェックとアカウント作成の判定を分離しバグを根絶
 document.getElementById('save-first-name-btn').addEventListener('click', async () => {
     const inputId = document.getElementById('first-id-input').value.trim();
     const inputName = document.getElementById('first-name-input').value.trim();
@@ -187,17 +185,30 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
     }
 
     if (pendingGoogleUser) {
-        const { error } = await supabaseClient.from('users').insert([{
+        // 1. まず入力されたユーザーID(user_id)が既に使われていないか単体チェック
+        const { data: checkIdData } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('user_id', inputId)
+            .maybeSingle();
+
+        if (checkIdData) {
+            showNotification("❌ そのIDは既に他のユーザーに使用されています！");
+            return;
+        }
+
+        // 2. 被っていなければ upsert (登録または更新) を実行
+        const { error } = await supabaseClient.from('users').upsert({
             id: pendingGoogleUser.googleId,
             user_id: inputId,
             name: inputName,
             avatar: pendingGoogleUser.avatar || DEFAULT_AVATAR,
             profile_bg: ""
-        }]);
+        });
 
         if (error) {
             console.error(error);
-            showNotification("❌ そのIDは既に他のユーザーに使用されています！");
+            showNotification("登録中にエラーが発生しました。もう一度お試しください。");
             return;
         }
 
@@ -265,13 +276,12 @@ async function loadFriendSystemData() {
     updateChatListUI();
 }
 
-// フレンド申請送信
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const targetIdInput = document.getElementById('friend-id-input').value.trim();
     if (!targetIdInput) return;
     if (targetIdInput === myUser.user_id) { showNotification("自分のIDには申請できません"); return; }
 
-    const { data: targetUser } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).single();
+    const { data: targetUser } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).maybeSingle();
     if (!targetUser) {
         showNotification("指定されたIDのユーザーが見つかりません");
         return;
@@ -292,7 +302,6 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     document.getElementById('friend-id-input').value = '';
 });
 
-// QRコード模擬スキャン
 document.getElementById('simulate-scan-btn').addEventListener('click', () => {
     const scanId = document.getElementById('qr-scan-simulate').value.trim();
     if(!scanId) return;
@@ -552,10 +561,9 @@ document.getElementById('message-input').addEventListener('keypress', (e) => { i
 function addMessageToScreen(data) {
     const messagesDiv = document.getElementById('messages'); if(!messagesDiv) return;
     const isMe = data.username === myUser.name;
-    const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me':'other'}`;
+    const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me' : 'other'}`;
     if (data.id) group.setAttribute('data-msg-id', data.id);
     
-    // 安全なSVG画像フォールバック設定
     const avatarImg = document.createElement('img'); avatarImg.className = 'msg-avatar'; 
     avatarImg.src = data.avatar || DEFAULT_AVATAR;
 
