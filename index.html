@@ -11,6 +11,7 @@
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -39,6 +40,7 @@
                     <img id="my-avatar" src="https://via.placeholder.com/50" class="avatar" alt="avatar">
                     <div class="profile-info">
                         <span id="my-name-display" class="profile-name">ユーザー名</span>
+                        <span id="my-id-display" style="font-size: 11px; opacity: 0.8;">ID: 未設定</span>
                         <span id="edit-profile-trigger" class="edit-profile-btn">プロフィール編集</span>
                     </div>
                     <button id="logout-btn" class="logout-btn">ログアウト</button>
@@ -50,7 +52,14 @@
             </div>
 
             <div id="tab-friends" class="tab-content">
-                <ul id="friend-list" class="list-view"></ul>
+                <div class="friend-requests-section">
+                    <h4>フレンド申請一覧</h4>
+                    <ul id="friend-requests-list" class="list-view"></ul>
+                </div>
+                <div class="friend-list-section">
+                    <h4>フレンド (${id}人)</h4>
+                    <ul id="friend-list" class="list-view"></ul>
+                </div>
             </div>
 
             <div id="bottom-nav">
@@ -116,11 +125,12 @@
 
         <div id="modal-first-name" class="modal hidden">
             <div class="modal-content">
-                <h3>プロフィール設定</h3>
-                <p style="font-size: 12px; color: #666; margin-bottom: 10px;">使用するユーザー名を入力してください</p>
-                <input type="text" id="first-name-input" placeholder="ユーザー名を入力...">
+                <h3>初期プロフィール設定</h3>
+                <p style="font-size: 11px; color: #666; margin-bottom: 10px;">NOT=LINEで使用するIDとニックネームを決定します。</p>
+                <input type="text" id="first-id-input" placeholder="検索用固有IDを入力 (※後から変更不可)">
+                <input type="text" id="first-name-input" placeholder="ニックネームを入力 (変更可能)">
                 <div class="modal-buttons" style="margin-top: 15px;">
-                    <button id="save-first-name-btn" class="btn-primary">決定してはじめる</button>
+                    <button id="save-first-name-btn" class="btn-primary">アカウントを作成して開始</button>
                 </div>
             </div>
         </div>
@@ -152,22 +162,25 @@
         <div id="modal-add" class="modal hidden">
             <div class="modal-content">
                 <div class="add-type-selector">
-                    <button id="type-friend-btn" class="active">フレンド追加</button>
+                    <button id="type-friend-btn" class="active">ID検索申請</button>
+                    <button id="type-qr-btn">マイQRコード</button>
                     <button id="type-group-btn">グループ作成</button>
                 </div>
 
                 <div id="form-add-friend">
-                    <input type="text" id="friend-id-input" placeholder="相手のユーザー名">
-                    <input type="text" id="friend-nickname-input" placeholder="あだ名（任意）">
-                    
-                    <div class="line-file-btn-wrapper">
-                        <label for="friend-avatar-file" class="line-custom-file-btn">相手のアイコン画像</label>
-                        <span id="friend-avatar-name" class="selected-file-name">未選択</span>
-                        <input type="file" id="friend-avatar-file" class="hidden-file-input" accept="image/*">
-                    </div>
-
+                    <input type="text" id="friend-id-input" placeholder="追加したい相手の登録ID">
                     <div class="modal-buttons">
-                        <button id="add-friend-submit" class="btn-primary">追加</button>
+                        <button id="add-friend-submit" class="btn-primary">フレンド申請を送る</button>
+                        <button class="btn-secondary closeModal">閉じる</button>
+                    </div>
+                </div>
+
+                <div id="form-qr-friend" class="hidden">
+                    <p style="font-size: 12px; color:#555; margin-bottom:10px;">このQRコードを相手に読み取ってもらうか、相手のIDを入力して申請してください。</p>
+                    <div id="my-qrcode-container" style="display:flex; justify-content:center; padding:10px; background:#fff; border-radius:8px;"></div>
+                    <input type="text" id="qr-scan-simulate" placeholder="模擬スキャン: 相手のIDを入力して決定" style="margin-top:15px;">
+                    <div class="modal-buttons">
+                        <button id="simulate-scan-btn" class="btn-primary">QRコード読取実行</button>
                         <button class="btn-secondary closeModal">閉じる</button>
                     </div>
                 </div>
@@ -266,15 +279,19 @@
 
         <div id="modal-call" class="modal hidden">
             <div class="modal-content call-modal-content">
-                <h3 id="call-status">通話中...</h3>
-                <div id="call-user-info">
-                    <span id="call-target-display" style="font-size: 18px; font-weight: bold;">相手の名前</span>
+                <div class="call-header">
+                    <h3 id="call-status">通話中...</h3>
+                    <span id="call-target-display" style="font-size: 14px; color: #ccc;">相手の名前</span>
+                    <button id="call-layout-btn" class="btn-small hidden" style="margin-left:auto;">🔲 配置切替</button>
                 </div>
-                <div id="video-container" class="hidden">
+                
+                <div id="video-container" class="layout-pip hidden">
                     <video id="remote-video" autoplay playsinline></video>
-                    <video id="local-video" autoplay playsinline muted></video>
+                    <video id="local-video" autoplay playsinline muted class="filter-none"></video>
                 </div>
-                <div class="modal-buttons" style="margin-top: 20px;">
+
+                <div class="call-controls">
+                    <button id="call-effect-btn" class="btn-small hidden" style="background:#555;">✨ フィルター</button>
                     <button id="accept-call-btn" class="btn-primary hidden">出る</button>
                     <button id="hangup-call-btn" class="btn-secondary danger" style="background:#ff4d4f; color:white;">切る</button>
                 </div>

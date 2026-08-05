@@ -6,7 +6,6 @@ const GOOGLE_CLIENT_ID = "56462276148-q2n8gpnaphi48gjq7is0i07dtr4ger0v.apps.goog
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let myUser = JSON.parse(localStorage.getItem('notline_myUser')) || null;
-let friends = JSON.parse(localStorage.getItem('notline_friends')) || {};
 let chatsData = JSON.parse(localStorage.getItem('notline_chats')) || {};
 let stories = JSON.parse(localStorage.getItem('notline_stories')) || [];
 let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
@@ -15,6 +14,8 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     bubbleShape: "15px"
 };
 let chats = {};
+let activeFriendsList = []; // Supabaseからロードしたフレンドデータ
+let activeRequestsList = []; // 届いている申請データ
 let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
     "https://api.dicebear.com/7.x/fun-emoji/svg?seed=happy",
     "https://api.dicebear.com/7.x/fun-emoji/svg?seed=sad",
@@ -25,25 +26,21 @@ let activeChatId = null;
 let currentSubscription = null;
 let selectedMsgTarget = null; 
 let pendingGoogleUser = null; 
+let qrcodeInstance = null;
 
 // WebRTC 用の変数
 let localStream = null;
 let peerConnection = null;
-let callSession = {
-    active: false,
-    roomId: null,
-    caller: null,
-    callee: null,
-    type: 'audio',
-    remoteSdp: null
-};
-const rtcConfig = {
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
+let callSession = { active: false, roomId: null, caller: null, callee: null, type: 'audio', remoteSdp: null };
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+
+const callLayouts = ['layout-pip', 'layout-split-v', 'layout-split-h'];
+let currentLayoutIndex = 0;
+const videoFilters = ['filter-none', 'filter-grayscale', 'filter-sepia', 'filter-blur', 'filter-neon'];
+let currentFilterIndex = 0;
 
 function saveData() {
     if (myUser) localStorage.setItem('notline_myUser', JSON.stringify(myUser));
-    localStorage.setItem('notline_friends', JSON.stringify(friends));
     localStorage.setItem('notline_stamps', JSON.stringify(stamps));
     localStorage.setItem('notline_stories', JSON.stringify(stories));
     localStorage.setItem('notline_settings', JSON.stringify(appSettings));
@@ -62,42 +59,12 @@ function saveData() {
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
 }
 
-async function syncUserToSupabase() {
-    if (!myUser || !myUser.googleId) return;
+// Supabase DBからログインユーザーの登録情報を取得
+async function fetchUserFromSupabase(uid) {
     try {
-        const { error } = await supabaseClient
-            .from('users')
-            .upsert({
-                id: myUser.googleId,
-                name: myUser.name,
-                avatar: myUser.avatar,
-                profile_bg: myUser.profileBg,
-                updated_at: new Date().toISOString()
-            });
-        if (error) console.error("Supabase Sync Error:", error);
-    } catch (e) {
-        console.error("DB Connection Failed:", e);
-    }
-}
-
-async function fetchUserFromSupabase(googleId) {
-    try {
-        const { data, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('id', googleId)
-            .single();
-        if (!error && data) {
-            return {
-                name: data.name,
-                avatar: data.avatar,
-                googleId: data.id,
-                profileBg: data.profile_bg
-            };
-        }
-    } catch (e) {
-        console.error(e);
-    }
+        const { data, error } = await supabaseClient.from('users').select('*').eq('id', uid).single();
+        if (!error && data) return data;
+    } catch (e) { console.error(e); }
     return null;
 }
 
@@ -109,12 +76,9 @@ function sendAppNotification(title, body) {
 }
 
 function showNotification(msg) {
-    let toast = document.getElementById('toast-notification');
-    if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'toast-notification';
-        document.getElementById('app-container').appendChild(toast);
-    }
+    let toast = document.getElementById('toast-notification') || document.createElement('div');
+    toast.id = 'toast-notification';
+    document.getElementById('app-container').appendChild(toast);
     toast.innerText = msg;
     toast.className = 'show';
     setTimeout(() => toast.classList.remove('show'), 2500);
@@ -140,8 +104,7 @@ function resizeImage(base64Str, maxWidth = 300, maxHeight = 300) {
         img.src = base64Str;
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
+            let width = img.width; let height = img.height;
             if (width > height) {
                 if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
             } else {
@@ -159,47 +122,61 @@ function resizeImage(base64Str, maxWidth = 300, maxHeight = 300) {
 function parseJwt(token) {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
+    return JSON.parse(decodeURIComponent(window.atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
 }
 
 async function handleCredentialResponse(response) {
     const userData = parseJwt(response.credential);
     const googleId = userData.sub;
 
-    const remoteUser = await fetchUserFromSupabase(googleId);
+    const dbUser = await fetchUserFromSupabase(googleId);
 
-    if (remoteUser) {
-        myUser = remoteUser;
-        completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
-        showNotification(`${myUser.name} としてログインしたよ！`);
-    } else if (myUser && myUser.googleId === googleId) {
-        completeLogin(myUser.name, myUser.avatar, googleId, myUser.profileBg);
-        showNotification(`${myUser.name} としてログインしたよ！`);
+    if (dbUser) {
+        myUser = { name: dbUser.name, user_id: dbUser.user_id, avatar: dbUser.avatar, googleId: dbUser.id, profileBg: dbUser.profile_bg };
+        completeLogin();
+        showNotification(`${myUser.name} としてログインしました`);
     } else {
-        pendingGoogleUser = {
-            googleId: googleId,
-            defaultName: userData.name,
-            avatar: userData.picture
-        };
+        pendingGoogleUser = { googleId: googleId, avatar: userData.picture, name: userData.name };
         document.getElementById('first-name-input').value = userData.name;
         document.getElementById('modal-first-name').classList.remove('hidden');
     }
 }
 
+// 【機能刷新】ニックネーム・ID登録処理 (ID重複時エラー通知)
 document.getElementById('save-first-name-btn').addEventListener('click', async () => {
+    const inputId = document.getElementById('first-id-input').value.trim();
     const inputName = document.getElementById('first-name-input').value.trim();
-    if (!inputName) {
-        showNotification("名前を入力してください！");
+    
+    if (!inputId || !inputName) {
+        showNotification("IDとニックネームの両方を入力してください");
         return;
     }
+    if (!/^[a-zA-Z0-9_\-]{3,15}$/.test(inputId)) {
+        showNotification("IDは3〜15文字の半角英数字・記号(_, -)のみ使用可能です");
+        return;
+    }
+
     if (pendingGoogleUser) {
-        completeLogin(inputName, pendingGoogleUser.avatar, pendingGoogleUser.googleId, "");
+        // IDが既に使われているか確認を兼ねてInsert
+        const { error } = await supabaseClient.from('users').insert([{
+            id: pendingGoogleUser.googleId,
+            user_id: inputId,
+            name: inputName,
+            avatar: pendingGoogleUser.avatar,
+            profile_bg: ""
+        }]);
+
+        if (error) {
+            console.error(error);
+            showNotification("❌ そのIDは既に他のユーザーに使用されています！");
+            return;
+        }
+
+        myUser = { name: inputName, user_id: inputId, avatar: pendingGoogleUser.avatar, googleId: pendingGoogleUser.googleId, profileBg: "" };
         document.getElementById('modal-first-name').classList.add('hidden');
-        showNotification(`${inputName} として登録したよ！`);
+        showNotification("アカウントを作成しました！");
         pendingGoogleUser = null;
+        completeLogin();
     }
 });
 
@@ -212,50 +189,13 @@ function initGoogleLogin() {
     }
 }
 
-function setupFileInputListeners() {
-    const pairs = [
-        ['edit-avatar-file', 'edit-avatar-name'],
-        ['edit-profile-bg-file', 'edit-bg-name'],
-        ['friend-avatar-file', 'friend-avatar-name'],
-        ['custom-stamp-file', 'stamp-file-name']
-    ];
-    pairs.forEach(([inputId, nameId]) => {
-        const el = document.getElementById(inputId);
-        const nameEl = document.getElementById(nameId);
-        if (el && nameEl) {
-            el.addEventListener('change', (e) => {
-                nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択";
-            });
-        }
-    });
-}
-
-window.onload = function () {
-    initGoogleLogin();
-    applySettingsUI();
-    setupFileInputListeners();
-
-    document.getElementById('font-select').value = appSettings.font;
-    document.getElementById('bubble-color-picker').value = appSettings.bubbleColor;
-    document.getElementById('bubble-shape-select').value = appSettings.bubbleShape;
-
-    if (myUser && myUser.name) {
-        completeLogin(myUser.name, myUser.avatar, myUser.googleId, myUser.profileBg);
-    }
-};
-
-function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
-    myUser = { name: username, avatar: avatarUrl, googleId: googleId, profileBg: profileBg };
+function completeLogin() {
     saveData();
-    syncUserToSupabase();
-
     document.getElementById('my-name-display').innerText = myUser.name;
+    document.getElementById('my-id-display').innerText = `ID: ${myUser.user_id}`;
     document.getElementById('my-avatar').src = myUser.avatar;
-    if (myUser.profileBg) {
-        document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
-    } else {
-        document.getElementById('my-profile-bg').style.backgroundImage = 'none';
-    }
+    if (myUser.profileBg) document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
+
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
 
@@ -265,20 +205,203 @@ function completeLogin(username, avatarUrl, googleId = "", profileBg = "") {
         registerChatRoom(roomId, room.name, room.isGroup, room.avatar, room.bgImage, room.members);
     });
 
+    loadFriendSystemData();
+}
+
+// 【根本改修】フレンドデータ一括読み込み処理
+async function loadFriendSystemData() {
+    if (!myUser) return;
+    
+    // 1. 承認済みフレンドの取得
+    const { data: acceptedData, error: err1 } = await supabaseClient
+        .from('friends')
+        .select(`
+            id, status,
+            sender: sender_uid ( id, user_id, name, avatar ),
+            receiver: receiver_uid ( id, user_id, name, avatar )
+        `)
+        .or(`sender_uid.eq.${myUser.googleId},receiver_uid.eq.${myUser.googleId}`)
+        .eq('status', 'accepted');
+
+    if (!err1 && acceptedData) {
+        activeFriendsList = acceptedData.map(row => {
+            return row.sender.id === myUser.googleId ? row.receiver : row.sender;
+        });
+    }
+
+    // 2. 自分宛ての保留中申請の取得
+    const { data: pendingData, error: err2 } = await supabaseClient
+        .from('friends')
+        .select(`
+            id,
+            sender: sender_uid ( id, user_id, name, avatar )
+        `)
+        .eq('receiver_uid', myUser.googleId)
+        .eq('status', 'pending');
+
+    if (!err2 && pendingData) {
+        activeRequestsList = pendingData;
+    }
+
     renderFriends();
+    renderFriendRequests();
     updateChatListUI();
 }
 
-document.getElementById('request-notification-btn').addEventListener('click', () => {
-    if (!("Notification" in window)) { showNotification("非対応ブラウザです"); return; }
-    Notification.requestPermission().then(permission => {
-        if (permission === "granted") sendAppNotification("NOT=LINE", "通知が有効になりました！🎉");
-    });
+// 【新機能】フレンド申請の送信処理 (ID検索)
+document.getElementById('add-friend-submit').addEventListener('click', async () => {
+    const targetIdInput = document.getElementById('friend-id-input').value.trim();
+    if (!targetIdInput) return;
+    if (targetIdInput === myUser.user_id) { showNotification("自分のIDには申請できません"); return; }
+
+    // 対象IDのユーザー情報を検索
+    const { data: targetUser, error } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).single();
+    if (error || !targetUser) {
+        showNotification("指定されたIDのユーザーが見つかりません");
+        return;
+    }
+
+    // 既に申請データが存在するかチェック
+    const { data: existing } = await supabaseClient.from('friends')
+        .select('id')
+        .or(`and(sender_uid.eq.${myUser.googleId},receiver_uid.eq.${targetUser.id}),and(sender_uid.eq.${targetUser.id},receiver_uid.eq.${myUser.googleId})`);
+
+    if (existing && existing.length > 0) {
+        showNotification("既にフレンドであるか、申請手続きが進行中です");
+        return;
+    }
+
+    // 申請データをインサート
+    await supabaseClient.from('friends').insert([{ sender_uid: myUser.googleId, receiver_uid: targetUser.id, status: 'pending' }]);
+    showNotification(`@${targetIdInput} へフレンド申請を送りました！`);
+    document.getElementById('modal-add').classList.add('hidden');
+    document.getElementById('friend-id-input').value = '';
 });
 
-document.getElementById('font-select').addEventListener('change', (e) => { appSettings.font = e.target.value; applySettingsUI(); });
-document.getElementById('bubble-color-picker').addEventListener('change', (e) => { appSettings.bubbleColor = e.target.value; saveData(); });
-document.getElementById('bubble-shape-select').addEventListener('change', (e) => { appSettings.bubbleShape = e.target.value; saveData(); });
+// 【新機能】QRコード模擬スキャン処理
+document.getElementById('simulate-scan-btn').addEventListener('click', async () => {
+    const scanId = document.getElementById('qr-scan-simulate').value.trim();
+    if(!scanId) return;
+    document.getElementById('friend-id-input').value = scanId;
+    document.getElementById('type-friend-btn').click();
+    document.getElementById('qr-scan-simulate').value = '';
+});
+
+// 申請の承認処理
+async function acceptRequest(requestId) {
+    await supabaseClient.from('friends').update({ status: 'accepted' }).eq('id', requestId);
+    showNotification("フレンド申請を承認しました！");
+    loadFriendSystemData();
+}
+
+// 申請の拒否処理
+async function rejectRequest(requestId) {
+    await supabaseClient.from('friends').delete().eq('id', requestId);
+    showNotification("フレンド申請をお断りしました");
+    loadFriendSystemData();
+}
+
+function renderFriendRequests() {
+    const list = document.getElementById('friend-requests-list');
+    list.innerHTML = '';
+    if (activeRequestsList.length === 0) {
+        list.innerHTML = '<li style="padding:10px; font-size:12px; color:#aaa; text-align:center;">届いている申請はありません</li>';
+        return;
+    }
+    activeRequestsList.forEach(req => {
+        const li = document.createElement('li');
+        li.className = 'list-item';
+        li.style.cursor = 'default';
+        li.innerHTML = `
+            <img src="${req.sender.avatar}" class="avatar">
+            <div class="item-info">
+                <div class="item-title">${req.sender.name}</div>
+                <div class="item-sub">ID: ${req.sender.user_id}</div>
+            </div>
+            <div style="display:flex; gap:5px;">
+                <button class="btn-small" onclick="acceptRequest(${req.id})">承認</button>
+                <button class="btn-small" style="background:#ff4d4f;" onclick="rejectRequest(${req.id})">拒否</button>
+            </div>
+        `;
+        list.appendChild(li);
+    });
+}
+
+function renderFriends() {
+    const list = document.getElementById('friend-list'); list.innerHTML = '';
+    const sectionTitle = document.querySelector('.friend-list-section h4');
+    if(sectionTitle) sectionTitle.innerText = `フレンド (${activeFriendsList.length}人)`;
+
+    if (activeFriendsList.length === 0) {
+        list.innerHTML = '<li style="padding:10px; font-size:12px; color:#aaa; text-align:center;">フレンドはいません</li>';
+        return;
+    }
+    activeFriendsList.forEach(f => {
+        const li = document.createElement('li'); li.className = 'list-item';
+        li.onclick = () => { 
+            const pair = [myUser.googleId, f.id].sort(); 
+            registerChatRoom(`chat_${pair[0]}_${pair[1]}`, f.name, false, f.avatar);
+            openChatRoom(`chat_${pair[0]}_${pair[1]}`); 
+        };
+        li.innerHTML = `<img src="${f.avatar}" class="avatar"><div class="item-info"><div class="item-title">${f.name}</div><div class="item-sub">ID: ${f.user_id}</div></div>`;
+        list.appendChild(li);
+    });
+}
+
+// タブ切り替え拡張
+document.getElementById('add-btn').addEventListener('click', () => {
+    document.getElementById('modal-add').classList.remove('hidden');
+    document.getElementById('type-friend-btn').click();
+    
+    // 【マイQRコード自動生成】
+    const qrContainer = document.getElementById('my-qrcode-container');
+    qrContainer.innerHTML = '';
+    if(myUser) {
+        new QRCode(qrContainer, { text: myUser.user_id, width: 140, height: 140 });
+    }
+});
+
+document.getElementById('type-friend-btn').addEventListener('click', (e) => {
+    activateAddTab('form-add-friend', e.target);
+});
+document.getElementById('type-qr-btn').addEventListener('click', (e) => {
+    activateAddTab('form-qr-friend', e.target);
+});
+document.getElementById('type-group-btn').addEventListener('click', (e) => {
+    activateAddTab('form-add-group', e.target);
+    const container = document.getElementById('group-member-select');
+    container.innerHTML = activeFriendsList.map(f => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${f.id}"> ${f.name}</label>`).join('');
+});
+
+function activateAddTab(formId, targetBtn) {
+    document.querySelectorAll('.add-type-selector button').forEach(b => b.classList.remove('active'));
+    targetBtn.classList.add('active');
+    document.getElementById('form-add-friend').classList.add('hidden');
+    document.getElementById('form-qr-friend').classList.add('hidden');
+    document.getElementById('form-add-group').classList.add('hidden');
+    document.getElementById(formId).classList.remove('hidden');
+}
+
+// 以降のコンテキスト共通ロジックは以前の安定版を継承
+document.getElementById('create-group-submit').addEventListener('click', () => {
+    const groupName = document.getElementById('group-name-input').value.trim();
+    if (!groupName) return;
+    const checkboxes = document.querySelectorAll('#group-member-select input[type="checkbox"]:checked');
+    const selectedMembers = [myUser.googleId]; checkboxes.forEach(cb => selectedMembers.push(cb.value));
+    const roomId = `group_${Date.now()}`;
+    registerChatRoom(roomId, groupName, true, `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`, "", selectedMembers);
+    showNotification(`グループ「${groupName}」を作成しました`);
+    document.getElementById('modal-add').classList.add('hidden');
+});
+
+function setupFileInputListeners() {
+    const pairs = [['edit-avatar-file', 'edit-avatar-name'], ['edit-profile-bg-file', 'edit-bg-name'], ['custom-stamp-file', 'stamp-file-name']];
+    pairs.forEach(([inputId, nameId]) => {
+        const el = document.getElementById(inputId); const nameEl = document.getElementById(nameId);
+        if (el && nameEl) el.addEventListener('change', (e) => { nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択"; });
+    });
+}
+setupFileInputListeners();
 
 document.getElementById('edit-profile-trigger').addEventListener('click', () => {
     document.getElementById('edit-name-input').value = myUser.name;
@@ -289,225 +412,78 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     const newName = document.getElementById('edit-name-input').value.trim();
     const fileInput = document.getElementById('edit-avatar-file');
     const bgFileInput = document.getElementById('edit-profile-bg-file');
-
     if (newName) myUser.name = newName;
-    if (fileInput.files.length > 0) {
-        const rawBase64 = await readFileAsBase64(fileInput.files[0]);
-        myUser.avatar = await resizeImage(rawBase64, 150, 150);
-    }
+    if (fileInput.files.length > 0) { myUser.avatar = await resizeImage(await readFileAsBase64(fileInput.files[0]), 150, 150); }
     if (bgFileInput.files.length > 0) {
-        const rawBgBase64 = await readFileAsBase64(bgFileInput.files[0]);
-        myUser.profileBg = await resizeImage(rawBgBase64, 400, 250);
+        myUser.profileBg = await resizeImage(await readFileAsBase64(bgFileInput.files[0]), 400, 250);
         document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
     }
-    saveData();
-    await syncUserToSupabase();
+    saveData(); await syncUserToSupabase();
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
     document.getElementById('modal-profile').classList.add('hidden');
-    showNotification("プロフィールを更新したよ！");
+    showNotification("プロフィールを更新しました");
 });
 
-document.getElementById('story-btn').addEventListener('click', () => {
-    document.getElementById('modal-story').classList.remove('hidden');
-    renderStories();
-});
-
+document.getElementById('story-btn').addEventListener('click', () => { document.getElementById('modal-story').classList.remove('hidden'); renderStories(); });
 document.getElementById('post-story-file').addEventListener('change', async (e) => {
     if (e.target.files.length > 0) {
-        const rawBase64 = await readFileAsBase64(e.target.files[0]);
-        const compressed = await resizeImage(rawBase64, 300, 400);
-        stories.push({ username: myUser.name, avatar: myUser.avatar, image: compressed, timestamp: Date.now() });
-        saveData();
-        renderStories();
-        showNotification("ストーリーを投稿したよ！");
-        e.target.value = '';
+        stories.push({ username: myUser.name, avatar: myUser.avatar, image: await resizeImage(await readFileAsBase64(e.target.files[0]), 300, 400), timestamp: Date.now() });
+        saveData(); renderStories(); e.target.value = '';
     }
 });
-
 function renderStories() {
-    const area = document.getElementById('story-display-area');
-    const now = Date.now();
-    stories = stories.filter(s => (now - s.timestamp) < 86400000);
-    saveData();
-    if (stories.length === 0) {
-        area.innerHTML = `<p style="color:#aaa;">投稿されたストーリーはありません</p>`;
-        return;
-    }
-    area.innerHTML = stories.map(s => `
-        <div class="story-item">
-            <div class="story-user"><img src="${s.avatar}" class="msg-avatar" alt=""><span>${s.username}</span></div>
-            <img src="${s.image}" class="story-img" alt="">
-        </div>
-    `).join('');
+    const area = document.getElementById('story-display-area'); const now = Date.now();
+    stories = stories.filter(s => (now - s.timestamp) < 86400000); saveData();
+    if (stories.length === 0) { area.innerHTML = `<p style="color:#aaa;">投稿はありません</p>`; return; }
+    area.innerHTML = stories.map(s => `<div class="story-item"><div class="story-user"><img src="${s.avatar}" class="msg-avatar"><span>${s.username}</span></div><img src="${s.image}" class="story-img"></div>`).join('');
 }
 
 document.getElementById('logout-btn').addEventListener('click', () => {
-    endCallState();
-    if (currentSubscription) {
-        supabaseClient.removeChannel(currentSubscription);
-        currentSubscription = null;
-    }
-    document.getElementById('main-screen').classList.add('hidden');
-    document.getElementById('chat-screen').classList.add('hidden');
-    document.getElementById('login-screen').classList.remove('hidden');
+    endCallState(); if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    document.getElementById('main-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('hidden');
 });
-
 document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
+document.querySelectorAll('.closeModal').forEach(btn => { btn.addEventListener('click', (e) => { e.target.closest('.modal').classList.add('hidden'); }); });
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(btn.dataset.tab).classList.add('active');
+        btn.classList.add('active'); document.getElementById(btn.dataset.tab).classList.add('active');
         document.getElementById('header-title').innerText = btn.dataset.tab === 'tab-chats' ? 'トーク' : 'フレンド';
+        if(btn.dataset.tab === 'tab-friends') loadFriendSystemData();
     });
-});
-
-document.getElementById('add-btn').addEventListener('click', () => { document.getElementById('modal-add').classList.remove('hidden'); });
-document.querySelectorAll('.closeModal').forEach(btn => { btn.addEventListener('click', (e) => { e.target.closest('.modal').classList.add('hidden'); }); });
-
-document.getElementById('type-friend-btn').addEventListener('click', (e) => {
-    e.target.classList.add('active'); document.getElementById('type-group-btn').classList.remove('active');
-    document.getElementById('form-add-friend').classList.remove('hidden'); document.getElementById('form-add-group').classList.add('hidden');
-});
-
-document.getElementById('type-group-btn').addEventListener('click', (e) => {
-    e.target.classList.add('active'); document.getElementById('type-friend-btn').classList.remove('active');
-    document.getElementById('form-add-friend').classList.add('hidden'); document.getElementById('form-add-group').classList.remove('hidden');
-    const container = document.getElementById('group-member-select');
-    container.innerHTML = Object.keys(friends).map(id => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${id}"> ${friends[id].nickname || friends[id].name}</label>`).join('');
-});
-
-document.getElementById('add-friend-submit').addEventListener('click', async () => {
-    const friendName = document.getElementById('friend-id-input').value.trim();
-    const nickname = document.getElementById('friend-nickname-input').value.trim();
-    const fileInput = document.getElementById('friend-avatar-file');
-
-    if (!friendName) { showNotification("相手の名前を入力してね！"); return; }
-    if (friendName === myUser.name) { showNotification("自分自身は追加できないよ！"); return; }
-
-    let finalAvatar = "https://api.dicebear.com/7.x/bottts/svg?seed=" + friendName;
-    if (fileInput.files.length > 0) {
-        const raw = await readFileAsBase64(fileInput.files[0]);
-        finalAvatar = await resizeImage(raw, 150, 150);
-    }
-
-    if (!friends[friendName]) {
-        friends[friendName] = { name: friendName, nickname: nickname, avatar: finalAvatar, isMuted: false, isBlocked: false, isHidden: false };
-        saveData();
-        renderFriends();
-        
-        const pair = [myUser.name, friendName].sort();
-        registerChatRoom(`chat_${pair[0]}_${pair[1]}`, friendName, false, finalAvatar);
-        showNotification(`${friendName} を追加したよ！`);
-    } else {
-        showNotification("すでに追加されているよ！");
-    }
-    document.getElementById('modal-add').classList.add('hidden');
-    document.getElementById('friend-id-input').value = '';
-    document.getElementById('friend-nickname-input').value = '';
-    fileInput.value = '';
-});
-
-document.getElementById('create-group-submit').addEventListener('click', () => {
-    const groupName = document.getElementById('group-name-input').value.trim();
-    if (!groupName) { showNotification("グループ名を入力してね"); return; }
-    
-    const checkboxes = document.querySelectorAll('#group-member-select input[type="checkbox"]:checked');
-    const selectedMembers = [myUser.name];
-    checkboxes.forEach(cb => selectedMembers.push(cb.value));
-
-    const roomId = `group_${Date.now()}`;
-    registerChatRoom(roomId, groupName, true, `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`, "", selectedMembers);
-    showNotification(`グループ「${groupName}」を作成したよ！`);
-    document.getElementById('modal-add').classList.add('hidden');
-    document.getElementById('group-name-input').value = '';
 });
 
 function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = []) {
-    if (chats[roomId]) return;
-    chats[roomId] = { name, isGroup, unread: 0, avatar, bgImage, members };
-    saveData();
-    updateChatListUI();
+    if (chats[roomId]) return; chats[roomId] = { name, isGroup, unread: 0, avatar, bgImage, members }; saveData();
 }
 
 async function openChatRoom(roomId) {
-    if (currentSubscription) {
-        await supabaseClient.removeChannel(currentSubscription);
-        currentSubscription = null;
-    }
-
-    activeChatId = roomId;
-    const room = chats[roomId];
-    if(!room) return;
-    room.unread = 0;
-    updateChatListUI();
-
-    const targetName = (friends[room.name] && friends[room.name].nickname) ? friends[room.name].nickname : room.name;
-    document.getElementById('chat-target-name').innerText = targetName;
+    if (currentSubscription) { await supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    activeChatId = roomId; const room = chats[roomId]; if(!room) return; room.unread = 0; updateChatListUI();
+    document.getElementById('chat-target-name').innerText = room.name;
     document.getElementById('messages').innerHTML = '';
-    
     const chatScreen = document.getElementById('chat-screen');
     chatScreen.style.backgroundImage = room.bgImage ? `url(${room.bgImage})` : 'none';
-    document.getElementById('main-screen').classList.add('hidden');
-    chatScreen.classList.remove('hidden');
+    document.getElementById('main-screen').classList.add('hidden'); chatScreen.classList.remove('hidden');
 
-    const { data: pastMessages, error } = await supabaseClient
-        .from('messages')
-        .select('*')
-        .eq('channel', roomId)
-        .order('created_at', { ascending: true });
-
-    if (!error && pastMessages) {
-        pastMessages.forEach(msg => addMessageToScreen(msg));
-    }
+    const { data: pastMessages, error } = await supabaseClient.from('messages').select('*').eq('channel', roomId).order('created_at', { ascending: true });
+    if (!error && pastMessages) pastMessages.forEach(msg => addMessageToScreen(msg));
 
     currentSubscription = supabaseClient.channel(`room:${roomId}`);
-    
     currentSubscription
         .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `channel=eq.${roomId}` }, payload => {
             if (payload.eventType === 'INSERT') {
-                const newMsg = payload.new;
-                if (friends[newMsg.username] && friends[newMsg.username].isBlocked) return;
-
-                if (newMsg.message.startsWith('[SYSTEM_BG]:')) {
-                    const bgData = newMsg.message.replace('[SYSTEM_BG]:', '');
-                    chats[roomId].bgImage = bgData;
-                    saveData();
-                    document.getElementById('chat-screen').style.backgroundImage = `url(${bgData})`;
-                    return;
-                }
-                if (newMsg.username !== myUser.name) {
-                    sendAppNotification(newMsg.username, newMsg.message.startsWith('[STAMP]:') ? "スタンプが届きました" : newMsg.message);
-                }
-                addMessageToScreen(newMsg);
+                if (payload.new.username !== myUser.name) sendAppNotification(payload.new.username, payload.new.message.startsWith('[STAMP]:') ? "スタンプ" : payload.new.message);
+                addMessageToScreen(payload.new);
             } else if (payload.eventType === 'DELETE') {
-                const deletedElem = document.querySelector(`[data-msg-id="${payload.old.id}"]`);
-                if (deletedElem) deletedElem.remove();
+                const elem = document.querySelector(`[data-msg-id="${payload.old.id}"]`); if (elem) elem.remove();
             }
         })
-        .on('broadcast', { event: 'call-signal' }, payload => {
-            handleCallSignaling(payload.payload);
-        })
-        .subscribe((status) => {
-            if(status === 'SUBSCRIBED') {
-                console.log("Supabase Realtime Subscribed for room:", roomId);
-            }
-        });
-}
-
-function renderFriends() {
-    const list = document.getElementById('friend-list'); list.innerHTML = '';
-    Object.keys(friends).forEach(id => {
-        const f = friends[id]; if (f.isHidden || f.isBlocked) return;
-        const displayName = f.nickname ? `${f.nickname} (${f.name})` : f.name;
-        const li = document.createElement('li'); li.className = 'list-item';
-        li.onclick = () => { const pair = [myUser.name, f.name].sort(); openChatRoom(`chat_${pair[0]}_${pair[1]}`); };
-        li.innerHTML = `<img src="${f.avatar}" class="avatar" alt=""><div class="item-info"><div class="item-title">${displayName}</div></div>`;
-        list.appendChild(li);
-    });
+        .on('broadcast', { event: 'call-signal' }, payload => { handleCallSignaling(payload.payload); })
+        .subscribe();
 }
 
 function updateChatListUI() {
@@ -516,405 +492,160 @@ function updateChatListUI() {
         const room = chats[roomId]; totalUnread += room.unread;
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar}" class="avatar" alt=""><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ (' + (room.members ? room.members.length : 1) + '人)' : '1対1トーク'}</div></div><span class="badge ${room.unread === 0 ? 'hidden' : ''}">${room.unread}</span>`;
+        li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'1対1'}</div></div>`;
         list.appendChild(li);
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
 }
 
-document.getElementById('back-btn').addEventListener('click', async () => {
-    endCallState();
-    if (currentSubscription) {
-        await supabaseClient.removeChannel(currentSubscription);
-        currentSubscription = null;
-    }
-    activeChatId = null;
-    document.getElementById('chat-screen').classList.add('hidden');
-    document.getElementById('main-screen').classList.remove('hidden');
-});
-
-document.getElementById('attach-toggle-btn').addEventListener('click', () => {
-    document.getElementById('attachment-menu').classList.toggle('hidden');
-    document.getElementById('stamp-picker').classList.add('hidden');
-});
-
+document.getElementById('attach-toggle-btn').addEventListener('click', () => { document.getElementById('attachment-menu').classList.toggle('hidden'); document.getElementById('stamp-picker').classList.add('hidden'); });
 document.getElementById('attach-file-trigger').addEventListener('click', () => { document.getElementById('chat-file-input').click(); });
 document.getElementById('attach-image-trigger').addEventListener('click', () => { document.getElementById('chat-image-input').click(); });
 
 document.getElementById('chat-file-input').addEventListener('change', async (e) => {
     if (e.target.files.length > 0 && activeChatId) {
-        const file = e.target.files[0];
-        const rawBase64 = await readFileAsBase64(file);
-        const payload = JSON.stringify({ name: file.name, data: rawBase64 });
-        await sendMessageInternal(`[FILE]:${payload}`);
-        document.getElementById('attachment-menu').classList.add('hidden');
-        e.target.value = '';
+        const f = e.target.files[0]; await sendMessageInternal(`[FILE]:${JSON.stringify({ name: f.name, data: await readFileAsBase64(f) })}`);
+        document.getElementById('attachment-menu').classList.add('hidden'); e.target.value = '';
     }
 });
-
 document.getElementById('chat-image-input').addEventListener('change', async (e) => {
     if (e.target.files.length > 0 && activeChatId) {
-        const file = e.target.files[0];
-        const rawBase64 = await readFileAsBase64(file);
-        const compressed = await resizeImage(rawBase64, 400, 400);
-        await sendMessageInternal(`[STAMP]:${compressed}`);
-        document.getElementById('attachment-menu').classList.add('hidden');
-        e.target.value = '';
+        await sendMessageInternal(`[STAMP]:${await resizeImage(await readFileAsBase64(e.target.files[0]), 400, 400)}`);
+        document.getElementById('attachment-menu').classList.add('hidden'); e.target.value = '';
     }
 });
 
 document.getElementById('chat-menu-btn').addEventListener('click', () => { if (activeChatId) document.getElementById('modal-chat-menu').classList.remove('hidden'); });
-
 document.getElementById('change-bg-file').addEventListener('change', async (e) => {
     if (e.target.files.length > 0 && activeChatId) {
-        const rawBase64 = await readFileAsBase64(e.target.files[0]);
-        const compressedBase64 = await resizeImage(rawBase64, 300, 300);
-        chats[activeChatId].bgImage = compressedBase64;
-        saveData();
-        document.getElementById('chat-screen').style.backgroundImage = `url(${compressedBase64})`;
-        await sendMessageInternal(`[SYSTEM_BG]:${compressedBase64}`);
-        showNotification("トークの壁紙を同期したよ！");
+        const bg = await resizeImage(await readFileAsBase64(e.target.files[0]), 300, 300);
+        chats[activeChatId].bgImage = bg; saveData(); document.getElementById('chat-screen').style.backgroundImage = `url(${bg})`;
         document.getElementById('modal-chat-menu').classList.add('hidden');
     }
 });
+document.getElementById('delete-friend-btn').addEventListener('click', () => { delete chats[activeChatId]; saveData(); updateChatListUI(); document.getElementById('back-btn').click(); document.getElementById('modal-chat-menu').classList.add('hidden'); });
 
-document.getElementById('set-nickname-btn').addEventListener('click', () => {
-    const room = chats[activeChatId];
-    if (room.isGroup) { showNotification("グループにあだ名はつけられないよ"); return; }
-    const newNick = prompt(`${room.name} の新しいあだ名を入力してね：`);
-    if (newNick !== null) {
-        if (!friends[room.name]) { friends[room.name] = { name: room.name, avatar: room.avatar }; }
-        friends[room.name].nickname = newNick.trim();
-        saveData();
-        document.getElementById('chat-target-name').innerText = newNick.trim() || room.name;
-        renderFriends();
-        showNotification("あだ名を変更したよ！");
-        document.getElementById('modal-chat-menu').classList.add('hidden');
-    }
-});
-
-document.getElementById('toggle-mute-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isMuted = !friends[room.name].isMuted; saveData(); showNotification(friends[room.name].isMuted ? "ミュートにしたよ" : "ミュート解除したよ"); } document.getElementById('modal-chat-menu').classList.add('hidden'); });
-document.getElementById('toggle-block-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isBlocked = !friends[room.name].isBlocked; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
-document.getElementById('toggle-hide-btn').addEventListener('click', () => { const room = chats[activeChatId]; if (friends[room.name]) { friends[room.name].isHidden = true; saveData(); renderFriends(); } document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
-document.getElementById('delete-friend-btn').addEventListener('click', () => { const room = chats[activeChatId]; delete friends[room.name]; delete chats[activeChatId]; saveData(); renderFriends(); updateChatListUI(); document.getElementById('modal-chat-menu').classList.add('hidden'); document.getElementById('back-btn').click(); });
-
-document.getElementById('stamp-toggle-btn').addEventListener('click', () => {
-    document.getElementById('stamp-picker').classList.toggle('hidden');
-    document.getElementById('attachment-menu').classList.add('hidden');
-    renderStamps();
-});
-function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')" alt="">`).join(''); }
-function sendStamp(stampUrl) { sendMessageInternal(`[STAMP]:${stampUrl}`); document.getElementById('stamp-picker').classList.add('hidden'); }
+document.getElementById('stamp-toggle-btn').addEventListener('click', () => { document.getElementById('stamp-picker').classList.toggle('hidden'); document.getElementById('attachment-menu').classList.add('hidden'); renderStamps(); });
+function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')">`).join(''); }
+function sendStamp(url) { sendMessageInternal(`[STAMP]:${url}`); document.getElementById('stamp-picker').classList.add('hidden'); }
 
 document.getElementById('add-custom-stamp-trigger').addEventListener('click', () => { document.getElementById('modal-custom-stamp').classList.remove('hidden'); });
 document.getElementById('save-custom-stamp-btn').addEventListener('click', async () => {
-    const fileInput = document.getElementById('custom-stamp-file');
-    if (fileInput.files.length > 0) {
-        const rawBase64 = await readFileAsBase64(fileInput.files[0]);
-        const compressedBase64 = await resizeImage(rawBase64, 120, 120);
-        stamps.push(compressedBase64);
-        saveData();
-        renderStamps();
-        showNotification("自作スタンプを追加したよ！");
-        document.getElementById('modal-custom-stamp').classList.add('hidden');
-    }
+    const f = document.getElementById('custom-stamp-file');
+    if (f.files.length > 0) { stamps.push(await resizeImage(await readFileAsBase64(f.files[0]), 120, 120)); saveData(); renderStamps(); document.getElementById('modal-custom-stamp').classList.add('hidden'); }
 });
 
-async function sendMessageInternal(msgText) {
-    if (!msgText || !activeChatId) return;
-    await supabaseClient.from('messages').insert([{ channel: activeChatId, username: myUser.name, avatar: myUser.avatar, message: msgText }]);
-}
-
-document.getElementById('send-btn').addEventListener('click', () => { const input = document.getElementById('message-input'); const text = input.value.trim(); if (text) { sendMessageInternal(text); input.value = ''; } });
-document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { const text = e.target.value.trim(); if (text) { sendMessageInternal(text); e.target.value = ''; } } });
-
-const ctxMenu = document.getElementById('msg-context-menu');
-document.addEventListener('click', () => ctxMenu.classList.add('hidden'));
-
-document.getElementById('ctx-copy-btn').addEventListener('click', () => {
-    if (selectedMsgTarget) {
-        navigator.clipboard.writeText(selectedMsgTarget.text);
-        showNotification("コピーしました！");
-    }
-});
-
-document.getElementById('ctx-delete-btn').addEventListener('click', async () => {
-    if (selectedMsgTarget && selectedMsgTarget.id) {
-        await supabaseClient.from('messages').delete().eq('id', selectedMsgTarget.id);
-        showNotification("送信を取り消しました");
-    }
-});
+async function sendMessageInternal(t) { if (t && activeChatId) await supabaseClient.from('messages').insert([{ channel: activeChatId, username: myUser.name, avatar: myUser.avatar, message: t }]); }
+document.getElementById('send-btn').addEventListener('click', () => { const i = document.getElementById('message-input'); if (i.value.trim()) { sendMessageInternal(i.value.trim()); i.value = ''; } });
+document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { sendMessageInternal(e.target.value.trim()); e.target.value = ''; } });
 
 function addMessageToScreen(data) {
-    const messagesDiv = document.getElementById('messages'); 
-    if(!messagesDiv) return;
+    const messagesDiv = document.getElementById('messages'); if(!messagesDiv) return;
     const isMe = data.username === myUser.name;
-    const group = document.createElement('div');
-    group.className = `message-group ${isMe ? 'me' : 'other'}`;
+    const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me':'other'}`;
     if (data.id) group.setAttribute('data-msg-id', data.id);
-
-    const avatarImg = document.createElement('img'); avatarImg.className = 'msg-avatar'; avatarImg.src = data.avatar || "https://via.placeholder.com/30";
     const content = document.createElement('div'); content.className = 'msg-content';
-
     if (!isMe) {
-        const nameLbl = document.createElement('div'); nameLbl.className = 'msg-username';
-        nameLbl.innerText = (friends[data.username] && friends[data.username].nickname) ? friends[data.username].nickname : data.username;
-        content.appendChild(nameLbl);
+        const nameLbl = document.createElement('div'); nameLbl.className = 'msg-username'; nameLbl.innerText = data.username; content.appendChild(nameLbl);
     }
-
     const wrapper = document.createElement('div'); wrapper.className = 'bubble-wrapper';
 
-    const handleContextMenu = (e) => {
-        e.preventDefault();
-        selectedMsgTarget = { id: data.id, text: data.message };
-        ctxMenu.style.top = `${e.clientY}px`;
-        ctxMenu.style.left = `${e.clientX}px`;
-        ctxMenu.classList.remove('hidden');
-        document.getElementById('ctx-delete-btn').style.display = isMe ? 'block' : 'none';
-    };
-
     if (data.message.startsWith('[STAMP]:')) {
-        const stampUrl = data.message.replace('[STAMP]:', '');
-        const stampImg = document.createElement('img'); stampImg.className = 'stamp-img'; stampImg.src = stampUrl;
-        stampImg.addEventListener('contextmenu', handleContextMenu);
-        wrapper.appendChild(stampImg);
+        const img = document.createElement('img'); img.className = 'stamp-img'; img.src = data.message.replace('[STAMP]:', ''); wrapper.appendChild(img);
     } else if (data.message.startsWith('[FILE]:')) {
         try {
-            const fileObj = JSON.parse(data.message.replace('[FILE]:', ''));
-            const fileBox = document.createElement('div');
-            fileBox.className = 'file-bubble';
-            fileBox.innerHTML = `📄 <b>${fileObj.name}</b><br><a href="${fileObj.data}" download="${fileObj.name}" class="file-dl-link">💾 ダウンロード</a>`;
-            fileBox.addEventListener('contextmenu', handleContextMenu);
-            wrapper.appendChild(fileBox);
-        } catch(e) { console.error("Malformed file bubble json", e); }
+            const f = JSON.parse(data.message.replace('[FILE]:', ''));
+            const box = document.createElement('div'); box.className = 'file-bubble'; box.innerHTML = `📄 <b>${f.name}</b><br><a href="${f.data}" download="${f.name}" class="file-dl-link">💾 ダウンロード</a>`;
+            wrapper.appendChild(box);
+        }catch(e){}
     } else {
         const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.innerText = data.message;
-        if (isMe) {
-            bubble.style.backgroundColor = appSettings.bubbleColor;
-            bubble.style.borderRadius = appSettings.bubbleShape;
-            bubble.style.borderTopRightRadius = "2px";
-        } else {
-            bubble.style.borderRadius = appSettings.bubbleShape;
-            bubble.style.borderTopLeftRadius = "2px";
-        }
-        bubble.addEventListener('contextmenu', handleContextMenu);
+        bubble.style.backgroundColor = isMe ? appSettings.bubbleColor : '#fff'; bubble.style.borderRadius = appSettings.bubbleShape;
         wrapper.appendChild(bubble);
     }
-
-    const msgDate = data.created_at ? new Date(data.created_at) : new Date();
     const timeText = document.createElement('span'); timeText.className = 'time';
-    timeText.innerHTML = `${isMe ? '<span class="read-mark">既読 </span>' : ''}${msgDate.getHours().toString().padStart(2, '0')}:${msgDate.getMinutes().toString().padStart(2, '0')}`;
-    
-    wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content);
-    messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    timeText.innerHTML = `${isMe ? '<span class="read-mark">既読 </span>':''}${new Date(data.created_at || Date.now()).getHours().toString().padStart(2,'0')}:${new Date(data.created_at || Date.now()).getMinutes().toString().padStart(2,'0')}`;
+    wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(content); messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// -------------------------------------------------------------
-// WebRTC シグナリング・通話コントロール
-// -------------------------------------------------------------
-document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
-document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
-document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
-document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
+// 通話シグナリング & レイアウト制御
+document.getElementById('call-layout-btn').addEventListener('click', () => {
+    const vc = document.getElementById('video-container'); vc.classList.remove(callLayouts[currentLayoutIndex]);
+    currentLayoutIndex = (currentLayoutIndex + 1) % callLayouts.length; vc.classList.add(callLayouts[currentLayoutIndex]);
+});
+document.getElementById('call-effect-btn').addEventListener('click', () => {
+    const lv = document.getElementById('local-video'); lv.classList.remove(videoFilters[currentFilterIndex]);
+    currentFilterIndex = (currentFilterIndex + 1) % videoFilters.length; lv.classList.add(videoFilters[currentFilterIndex]);
+});
 
-async function handleCallSignaling(payload) {
-    const { event, from, to, type, sdp, candidate } = payload;
-    if (to !== myUser.name) return;
-
+async function handleCallSignaling(p) {
+    const { event, from, to, type, sdp, candidate } = p; if (to !== myUser.name) return;
     if (event === 'call-offer') {
-        if (callSession.active) {
-            sendSignalingMessage({ event: 'call-rejected', from: myUser.name, to: from });
-            return;
-        }
+        if (callSession.active) { sendSignalingMessage({ event: 'call-rejected', from: myUser.name, to: from }); return; }
         callSession = { active: true, roomId: activeChatId, caller: from, callee: myUser.name, type: type, remoteSdp: sdp };
         showCallModal('incoming');
-    } 
-    else if (event === 'call-answer') {
-        if (peerConnection) {
-            try {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-                document.getElementById('call-status').innerText = "通話中";
-            } catch(e) { console.error("Error setting remote description:", e); }
-        }
-    } 
-    else if (event === 'call-candidate') {
-        if (peerConnection && candidate) {
-            try {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch(e) { console.warn("ICE candidate addition skipped:", e); }
-        }
-    } 
-    else if (event === 'call-hangup') {
-        endCallState();
-        showNotification("通話が終了しました");
-    }
-    else if (event === 'call-rejected') {
-        endCallState();
-        showNotification("相手が応答しないか、話し中です");
-    }
+    } else if (event === 'call-answer' && peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+        document.getElementById('call-status').innerText = "通話中";
+    } else if (event === 'call-candidate' && peerConnection && candidate) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{});
+    } else if (event === 'call-hangup' || event === 'call-rejected') { endCallState(); }
 }
 
-function sendSignalingMessage(data) {
-    if (currentSubscription) {
-        currentSubscription.send({
-            type: 'broadcast',
-            event: 'call-signal',
-            payload: data
-        });
-    }
-}
+function sendSignalingMessage(d) { if (currentSubscription) currentSubscription.send({ type: 'broadcast', event: 'call-signal', payload: d }); }
 
 async function startCall(type) {
-    if (!activeChatId || chats[activeChatId].isGroup) {
-        showNotification("グループ通話には対応していません");
-        return;
-    }
-    const targetName = chats[activeChatId].name;
-    
-    callSession = { active: true, roomId: activeChatId, caller: myUser.name, callee: targetName, type: type, remoteSdp: null };
+    if (!activeChatId || chats[activeChatId].isGroup) return;
+    callSession = { active: true, roomId: activeChatId, caller: myUser.name, callee: chats[activeChatId].name, type: type };
     showCallModal('outgoing');
-
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: type === 'video'
-        });
-        
-        if (type === 'video') {
-            document.getElementById('local-video').srcObject = localStream;
-        }
-
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+        if (type === 'video') document.getElementById('local-video').srcObject = localStream;
         setupPeerConnection(type);
-
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        
-        sendSignalingMessage({
-            event: 'call-offer',
-            from: myUser.name,
-            to: targetName,
-            type: type,
-            sdp: offer
-        });
-    } catch (err) {
-        console.error(err);
-        showNotification("カメラ・マイクにアクセスできません");
-        hangupCall();
-    }
+        const offer = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offer);
+        sendSignalingMessage({ event: 'call-offer', from: myUser.name, to: callSession.callee, type: type, sdp: offer });
+    } catch (e) { hangupCall(); }
 }
 
 async function acceptCall() {
     document.getElementById('accept-call-btn').classList.add('hidden');
-    document.getElementById('call-status').innerText = "接続中...";
-
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: callSession.type === 'video'
-        });
-
-        if (callSession.type === 'video') {
-            document.getElementById('local-video').srcObject = localStream;
-        }
-
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callSession.type === 'video' });
+        if (callSession.type === 'video') document.getElementById('local-video').srcObject = localStream;
         setupPeerConnection(callSession.type);
-
         if (callSession.remoteSdp) {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(callSession.remoteSdp));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-
-            sendSignalingMessage({
-                event: 'call-answer',
-                from: myUser.name,
-                to: callSession.caller,
-                sdp: answer
-            });
+            const ans = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(ans);
+            sendSignalingMessage({ event: 'call-answer', from: myUser.name, to: callSession.caller, sdp: ans });
             document.getElementById('call-status').innerText = "通話中";
         }
-    } catch (err) {
-        console.error("Answer Call Error:", err);
-        hangupCall();
-    }
+    } catch (e) { hangupCall(); }
 }
 
 function setupPeerConnection(type) {
-    if(peerConnection) {
-        peerConnection.close();
-    }
+    if(peerConnection) peerConnection.close();
     peerConnection = new RTCPeerConnection(rtcConfig);
-
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
-
-    peerConnection.ontrack = (event) => {
-        const remoteVideo = document.getElementById('remote-video');
-        if (remoteVideo && remoteVideo.srcObject !== event.streams[0]) {
-            remoteVideo.srcObject = event.streams[0];
-        }
+    localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+    peerConnection.ontrack = (e) => {
+        const rv = document.getElementById('remote-video');
+        if (rv) { rv.srcObject = e.streams[0] || new MediaStream([e.track]); rv.play().catch(()=>{}); }
     };
-
-    peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-            const target = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
-            sendSignalingMessage({
-                event: 'call-candidate',
-                from: myUser.name,
-                to: target,
-                candidate: event.candidate
-            });
-        }
+    peerConnection.onicecandidate = (e) => {
+        if (e.candidate) sendSignalingMessage({ event: 'call-candidate', from: myUser.name, to: (callSession.caller === myUser.name)? callSession.callee : callSession.caller, candidate: e.candidate });
     };
 }
-
-function hangupCall() {
-    const target = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
-    sendSignalingMessage({ event: 'call-hangup', from: myUser.name, to: target });
-    endCallState();
-}
-
+function hangupCall() { sendSignalingMessage({ event: 'call-hangup', from: myUser.name, to: (callSession.caller === myUser.name)? callSession.callee : callSession.caller }); endCallState(); }
 function endCallState() {
-    if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-        localStream = null;
-    }
-    if (peerConnection) {
-        peerConnection.close();
-        peerConnection = null;
-    }
-    callSession.active = false;
-    callSession.remoteSdp = null;
-    document.getElementById('modal-call').classList.add('hidden');
-    
-    const rv = document.getElementById('remote-video');
-    const lv = document.getElementById('local-video');
-    if(rv) rv.srcObject = null;
-    if(lv) lv.srcObject = null;
+    if (localStream) localStream.getTracks().forEach(t => t.stop());
+    if (peerConnection) peerConnection.close();
+    callSession.active = false; document.getElementById('modal-call').classList.add('hidden');
+    document.getElementById('remote-video').srcObject = null; document.getElementById('local-video').srcObject = null;
 }
-
-function showCallModal(mode) {
-    const modal = document.getElementById('modal-call');
-    const status = document.getElementById('call-status');
-    const targetDisplay = document.getElementById('call-target-display');
-    const acceptBtn = document.getElementById('accept-call-btn');
-    const videoContainer = document.getElementById('video-container');
-
-    targetDisplay.innerText = (callSession.caller === myUser.name) ? callSession.callee : callSession.caller;
-    
-    if (callSession.type === 'video') {
-        videoContainer.classList.remove('hidden');
-    } else {
-        videoContainer.classList.add('hidden');
-    }
-
-    if (mode === 'outgoing') {
-        status.innerText = "発信中...";
-        acceptBtn.classList.add('hidden');
-    } else if (mode === 'incoming') {
-        status.innerText = `${callSession.type === 'video' ? 'ビデオ通話' : '音声通話'}の着信`;
-        acceptBtn.classList.remove('hidden');
-    }
-    modal.classList.remove('hidden');
+function showCallModal(m) {
+    const modal = document.getElementById('modal-call'); document.getElementById('call-target-display').innerText = (callSession.caller === myUser.name)? callSession.callee : callSession.caller;
+    const isV = callSession.type === 'video'; document.getElementById('video-container').classList.toggle('hidden', !isV);
+    document.getElementById('call-layout-btn').classList.toggle('hidden', !isV); document.getElementById('call-effect-btn').classList.toggle('hidden', !isV);
+    document.getElementById('call-status').innerText = m === 'outgoing' ? '発信中...':'着信';
+    document.getElementById('accept-call-btn').classList.toggle('hidden', m !== 'incoming'); modal.classList.remove('hidden');
 }

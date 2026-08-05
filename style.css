@@ -35,13 +35,13 @@ body {
 }
 .screen.hidden { display: none !important; }
 
-/* ログイン画面（緑 -> 青に変更） */
+/* ログイン画面 */
 #login-screen { justify-content: center; align-items: center; background-color: #007AFF; padding: 20px; }
 .login-box { background: white; padding: 40px 20px; border-radius: 12px; width: 100%; max-width: 320px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
 .login-box h2 { margin-top: 0; color: #007AFF; font-size: 24px; }
 .login-box p { font-size: 13px; color: #666; margin-bottom: 20px; }
 
-/* ヘッダー（緑 -> 青に変更） */
+/* ヘッダー */
 header {
     background-color: #007AFF;
     color: white;
@@ -95,6 +95,18 @@ header {
 .profile-name { font-weight: bold; font-size: 16px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
 .edit-profile-btn { font-size: 11px; color: #87cefa; cursor: pointer; text-decoration: underline; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 .logout-btn { background: rgba(255,77,79,0.9); border: none; color: white; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+
+/* フレンド申請管理セクション拡張 */
+.friend-requests-section, .friend-list-section {
+    padding: 10px 15px 5px 15px;
+}
+.friend-requests-section h4, .friend-list-section h4 {
+    margin: 5px 0;
+    font-size: 12px;
+    color: #555;
+    border-left: 3px solid #007AFF;
+    padding-left: 6px;
+}
 
 .tab-content { flex: 1; overflow-y: auto; display: none; }
 .tab-content.active { display: block; }
@@ -201,35 +213,20 @@ header {
 #toast-notification.show { top: 15px; }
 
 /* 通話モーダル用スタイル */
-.call-modal-content {
-    background: #222 !important;
-    color: #fff !important;
-    max-width: 360px;
-    padding: 30px 20px;
-}
-#video-container {
-    position: relative;
-    width: 100%;
-    height: 240px;
-    background: #000;
-    margin-top: 15px;
-    border-radius: 8px;
-    overflow: hidden;
-}
-#remote-video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-#local-video {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    width: 90px;
-    height: 120px;
-    object-fit: cover;
-    border: 2px solid #fff;
-    border-radius: 4px;
-    background: #333;
-    z-index: 10;
-}
+.call-modal-content { background: #1e1e1e !important; color: #fff !important; max-width: 360px; padding: 20px; }
+.call-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+#video-container { position: relative; width: 100%; height: 260px; background: #000; border-radius: 8px; overflow: hidden; transition: all 0.3s ease; }
+
+#video-container.layout-pip #remote-video { width: 100%; height: 100%; object-fit: cover; }
+#video-container.layout-pip #local-video { position: absolute; bottom: 10px; right: 10px; width: 80px; height: 110px; object-fit: cover; border: 2px solid #fff; border-radius: 6px; z-index: 10; }
+#video-container.layout-split-v { display: flex; flex-direction: column; }
+#video-container.layout-split-v #remote-video, #video-container.layout-split-v #local-video { position: relative; width: 100%; height: 50%; object-fit: cover; border: none; bottom: auto; right: auto; }
+#video-container.layout-split-h { display: flex; flex-direction: row; }
+#video-container.layout-split-h #remote-video, #video-container.layout-split-h #local-video { position: relative; width: 50%; height: 100%; object-fit: cover; border: none; bottom: auto; right: auto; }
+
+.filter-none { filter: none; }
+.filter-grayscale { filter: grayscale(100%); }
+.filter-sepia { filter: sepia(80%); }
+.filter-blur { filter: contrast(105%) brightness(110%) blur(1px); }
+.filter-neon { filter: saturate(200%) hue-rotate(90deg); }
+.call-controls { display: flex; gap: 10px; justify-content: center; margin-top: 15px; }
