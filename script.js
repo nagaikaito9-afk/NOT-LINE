@@ -5,6 +5,9 @@ const GOOGLE_CLIENT_ID = "56462276148-q2n8gpnaphi48gjq7is0i07dtr4ger0v.apps.goog
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// 安全な標準アバター画像のインラインSVGデータ
+const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%23007AFF'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👤</text></svg>";
+
 let myUser = JSON.parse(localStorage.getItem('notline_myUser')) || null;
 let chatsData = JSON.parse(localStorage.getItem('notline_chats')) || {};
 let stories = JSON.parse(localStorage.getItem('notline_stories')) || [];
@@ -14,19 +17,16 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     bubbleShape: "15px"
 };
 let chats = {};
-let activeFriendsList = []; // Supabaseからロードしたフレンドデータ
-let activeRequestsList = []; // 届いている申請データ
+let activeFriendsList = []; 
+let activeRequestsList = []; 
 let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
-    "https://api.dicebear.com/7.x/fun-emoji/svg?seed=happy",
-    "https://api.dicebear.com/7.x/fun-emoji/svg?seed=sad",
-    "https://api.dicebear.com/7.x/fun-emoji/svg?seed=love",
-    "https://api.dicebear.com/7.x/fun-emoji/svg?seed=cool"
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%23FFD700'/><circle cx='28' cy='30' r='5' fill='%23333'/><circle cx='52' cy='30' r='5' fill='%23333'/><path d='M25 50 Q40 68 55 50' stroke='%23333' stroke-width='4' fill='none'/></svg>",
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>"
 ];
 let activeChatId = null;
 let currentSubscription = null;
 let selectedMsgTarget = null; 
 let pendingGoogleUser = null; 
-let qrcodeInstance = null;
 
 // WebRTC 用の変数
 let localStream = null;
@@ -59,7 +59,7 @@ function saveData() {
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
 }
 
-// Supabase DBからログインユーザーの登録情報を取得
+// Supabase DBからログインユーザー情報取得
 async function fetchUserFromSupabase(uid) {
     try {
         const { data, error } = await supabaseClient.from('users').select('*').eq('id', uid).single();
@@ -76,9 +76,12 @@ function sendAppNotification(title, body) {
 }
 
 function showNotification(msg) {
-    let toast = document.getElementById('toast-notification') || document.createElement('div');
-    toast.id = 'toast-notification';
-    document.getElementById('app-container').appendChild(toast);
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-notification';
+        document.getElementById('app-container').appendChild(toast);
+    }
     toast.innerText = msg;
     toast.className = 'show';
     setTimeout(() => toast.classList.remove('show'), 2500);
@@ -132,17 +135,44 @@ async function handleCredentialResponse(response) {
     const dbUser = await fetchUserFromSupabase(googleId);
 
     if (dbUser) {
-        myUser = { name: dbUser.name, user_id: dbUser.user_id, avatar: dbUser.avatar, googleId: dbUser.id, profileBg: dbUser.profile_bg };
+        myUser = { name: dbUser.name, user_id: dbUser.user_id, avatar: dbUser.avatar || DEFAULT_AVATAR, googleId: dbUser.id, profileBg: dbUser.profile_bg };
         completeLogin();
         showNotification(`${myUser.name} としてログインしました`);
     } else {
-        pendingGoogleUser = { googleId: googleId, avatar: userData.picture, name: userData.name };
+        pendingGoogleUser = { googleId: googleId, avatar: userData.picture || DEFAULT_AVATAR, name: userData.name };
         document.getElementById('first-name-input').value = userData.name;
         document.getElementById('modal-first-name').classList.remove('hidden');
     }
 }
 
-// 【機能刷新】ニックネーム・ID登録処理 (ID重複時エラー通知)
+// Google ログインボタン初期化（リトライ＆エラー防止機能付）
+function initGoogleLogin() {
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+        try {
+            google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse });
+            const btnContainer = document.getElementById("google-btn-container");
+            if (btnContainer) {
+                google.accounts.id.renderButton(btnContainer, { theme: "outline", size: "large", width: "250" });
+            }
+        } catch (e) {
+            console.error("Google login render error:", e);
+        }
+    } else {
+        setTimeout(initGoogleLogin, 300);
+    }
+}
+
+window.onload = function() {
+    initGoogleLogin();
+    applySettingsUI();
+    setupFileInputListeners();
+
+    if (myUser && myUser.name) {
+        completeLogin();
+    }
+};
+
+// ユーザー初期ID・名前決定処理
 document.getElementById('save-first-name-btn').addEventListener('click', async () => {
     const inputId = document.getElementById('first-id-input').value.trim();
     const inputName = document.getElementById('first-name-input').value.trim();
@@ -157,12 +187,11 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
     }
 
     if (pendingGoogleUser) {
-        // IDが既に使われているか確認を兼ねてInsert
         const { error } = await supabaseClient.from('users').insert([{
             id: pendingGoogleUser.googleId,
             user_id: inputId,
             name: inputName,
-            avatar: pendingGoogleUser.avatar,
+            avatar: pendingGoogleUser.avatar || DEFAULT_AVATAR,
             profile_bg: ""
         }]);
 
@@ -172,7 +201,7 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
             return;
         }
 
-        myUser = { name: inputName, user_id: inputId, avatar: pendingGoogleUser.avatar, googleId: pendingGoogleUser.googleId, profileBg: "" };
+        myUser = { name: inputName, user_id: inputId, avatar: pendingGoogleUser.avatar || DEFAULT_AVATAR, googleId: pendingGoogleUser.googleId, profileBg: "" };
         document.getElementById('modal-first-name').classList.add('hidden');
         showNotification("アカウントを作成しました！");
         pendingGoogleUser = null;
@@ -180,20 +209,11 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
     }
 });
 
-function initGoogleLogin() {
-    if (typeof google !== 'undefined') {
-        google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleCredentialResponse });
-        google.accounts.id.renderButton(document.getElementById("google-btn-container"), { theme: "outline", size: "large", width: "250" });
-    } else {
-        setTimeout(initGoogleLogin, 300);
-    }
-}
-
 function completeLogin() {
     saveData();
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-id-display').innerText = `ID: ${myUser.user_id}`;
-    document.getElementById('my-avatar').src = myUser.avatar;
+    document.getElementById('my-avatar').src = myUser.avatar || DEFAULT_AVATAR;
     if (myUser.profileBg) document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
 
     document.getElementById('login-screen').classList.add('hidden');
@@ -208,12 +228,10 @@ function completeLogin() {
     loadFriendSystemData();
 }
 
-// 【根本改修】フレンドデータ一括読み込み処理
 async function loadFriendSystemData() {
     if (!myUser) return;
     
-    // 1. 承認済みフレンドの取得
-    const { data: acceptedData, error: err1 } = await supabaseClient
+    const { data: acceptedData } = await supabaseClient
         .from('friends')
         .select(`
             id, status,
@@ -223,14 +241,13 @@ async function loadFriendSystemData() {
         .or(`sender_uid.eq.${myUser.googleId},receiver_uid.eq.${myUser.googleId}`)
         .eq('status', 'accepted');
 
-    if (!err1 && acceptedData) {
+    if (acceptedData) {
         activeFriendsList = acceptedData.map(row => {
             return row.sender.id === myUser.googleId ? row.receiver : row.sender;
         });
     }
 
-    // 2. 自分宛ての保留中申請の取得
-    const { data: pendingData, error: err2 } = await supabaseClient
+    const { data: pendingData } = await supabaseClient
         .from('friends')
         .select(`
             id,
@@ -239,7 +256,7 @@ async function loadFriendSystemData() {
         .eq('receiver_uid', myUser.googleId)
         .eq('status', 'pending');
 
-    if (!err2 && pendingData) {
+    if (pendingData) {
         activeRequestsList = pendingData;
     }
 
@@ -248,20 +265,18 @@ async function loadFriendSystemData() {
     updateChatListUI();
 }
 
-// 【新機能】フレンド申請の送信処理 (ID検索)
+// フレンド申請送信
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const targetIdInput = document.getElementById('friend-id-input').value.trim();
     if (!targetIdInput) return;
     if (targetIdInput === myUser.user_id) { showNotification("自分のIDには申請できません"); return; }
 
-    // 対象IDのユーザー情報を検索
-    const { data: targetUser, error } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).single();
-    if (error || !targetUser) {
+    const { data: targetUser } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).single();
+    if (!targetUser) {
         showNotification("指定されたIDのユーザーが見つかりません");
         return;
     }
 
-    // 既に申請データが存在するかチェック
     const { data: existing } = await supabaseClient.from('friends')
         .select('id')
         .or(`and(sender_uid.eq.${myUser.googleId},receiver_uid.eq.${targetUser.id}),and(sender_uid.eq.${targetUser.id},receiver_uid.eq.${myUser.googleId})`);
@@ -271,15 +286,14 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
         return;
     }
 
-    // 申請データをインサート
     await supabaseClient.from('friends').insert([{ sender_uid: myUser.googleId, receiver_uid: targetUser.id, status: 'pending' }]);
     showNotification(`@${targetIdInput} へフレンド申請を送りました！`);
     document.getElementById('modal-add').classList.add('hidden');
     document.getElementById('friend-id-input').value = '';
 });
 
-// 【新機能】QRコード模擬スキャン処理
-document.getElementById('simulate-scan-btn').addEventListener('click', async () => {
+// QRコード模擬スキャン
+document.getElementById('simulate-scan-btn').addEventListener('click', () => {
     const scanId = document.getElementById('qr-scan-simulate').value.trim();
     if(!scanId) return;
     document.getElementById('friend-id-input').value = scanId;
@@ -287,14 +301,12 @@ document.getElementById('simulate-scan-btn').addEventListener('click', async () 
     document.getElementById('qr-scan-simulate').value = '';
 });
 
-// 申請の承認処理
 async function acceptRequest(requestId) {
     await supabaseClient.from('friends').update({ status: 'accepted' }).eq('id', requestId);
     showNotification("フレンド申請を承認しました！");
     loadFriendSystemData();
 }
 
-// 申請の拒否処理
 async function rejectRequest(requestId) {
     await supabaseClient.from('friends').delete().eq('id', requestId);
     showNotification("フレンド申請をお断りしました");
@@ -313,7 +325,7 @@ function renderFriendRequests() {
         li.className = 'list-item';
         li.style.cursor = 'default';
         li.innerHTML = `
-            <img src="${req.sender.avatar}" class="avatar">
+            <img src="${req.sender.avatar || DEFAULT_AVATAR}" class="avatar">
             <div class="item-info">
                 <div class="item-title">${req.sender.name}</div>
                 <div class="item-sub">ID: ${req.sender.user_id}</div>
@@ -340,33 +352,27 @@ function renderFriends() {
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => { 
             const pair = [myUser.googleId, f.id].sort(); 
-            registerChatRoom(`chat_${pair[0]}_${pair[1]}`, f.name, false, f.avatar);
+            registerChatRoom(`chat_${pair[0]}_${pair[1]}`, f.name, false, f.avatar || DEFAULT_AVATAR);
             openChatRoom(`chat_${pair[0]}_${pair[1]}`); 
         };
-        li.innerHTML = `<img src="${f.avatar}" class="avatar"><div class="item-info"><div class="item-title">${f.name}</div><div class="item-sub">ID: ${f.user_id}</div></div>`;
+        li.innerHTML = `<img src="${f.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${f.name}</div><div class="item-sub">ID: ${f.user_id}</div></div>`;
         list.appendChild(li);
     });
 }
 
-// タブ切り替え拡張
 document.getElementById('add-btn').addEventListener('click', () => {
     document.getElementById('modal-add').classList.remove('hidden');
     document.getElementById('type-friend-btn').click();
     
-    // 【マイQRコード自動生成】
     const qrContainer = document.getElementById('my-qrcode-container');
     qrContainer.innerHTML = '';
-    if(myUser) {
+    if(myUser && typeof QRCode !== 'undefined') {
         new QRCode(qrContainer, { text: myUser.user_id, width: 140, height: 140 });
     }
 });
 
-document.getElementById('type-friend-btn').addEventListener('click', (e) => {
-    activateAddTab('form-add-friend', e.target);
-});
-document.getElementById('type-qr-btn').addEventListener('click', (e) => {
-    activateAddTab('form-qr-friend', e.target);
-});
+document.getElementById('type-friend-btn').addEventListener('click', (e) => activateAddTab('form-add-friend', e.target));
+document.getElementById('type-qr-btn').addEventListener('click', (e) => activateAddTab('form-qr-friend', e.target));
 document.getElementById('type-group-btn').addEventListener('click', (e) => {
     activateAddTab('form-add-group', e.target);
     const container = document.getElementById('group-member-select');
@@ -382,7 +388,6 @@ function activateAddTab(formId, targetBtn) {
     document.getElementById(formId).classList.remove('hidden');
 }
 
-// 以降のコンテキスト共通ロジックは以前の安定版を継承
 document.getElementById('create-group-submit').addEventListener('click', () => {
     const groupName = document.getElementById('group-name-input').value.trim();
     if (!groupName) return;
@@ -401,7 +406,6 @@ function setupFileInputListeners() {
         if (el && nameEl) el.addEventListener('change', (e) => { nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択"; });
     });
 }
-setupFileInputListeners();
 
 document.getElementById('edit-profile-trigger').addEventListener('click', () => {
     document.getElementById('edit-name-input').value = myUser.name;
@@ -418,7 +422,7 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
         myUser.profileBg = await resizeImage(await readFileAsBase64(bgFileInput.files[0]), 400, 250);
         document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
     }
-    saveData(); await syncUserToSupabase();
+    saveData();
     document.getElementById('my-name-display').innerText = myUser.name;
     document.getElementById('my-avatar').src = myUser.avatar;
     document.getElementById('modal-profile').classList.add('hidden');
@@ -436,7 +440,7 @@ function renderStories() {
     const area = document.getElementById('story-display-area'); const now = Date.now();
     stories = stories.filter(s => (now - s.timestamp) < 86400000); saveData();
     if (stories.length === 0) { area.innerHTML = `<p style="color:#aaa;">投稿はありません</p>`; return; }
-    area.innerHTML = stories.map(s => `<div class="story-item"><div class="story-user"><img src="${s.avatar}" class="msg-avatar"><span>${s.username}</span></div><img src="${s.image}" class="story-img"></div>`).join('');
+    area.innerHTML = stories.map(s => `<div class="story-item"><div class="story-user"><img src="${s.avatar || DEFAULT_AVATAR}" class="msg-avatar"><span>${s.username}</span></div><img src="${s.image}" class="story-img"></div>`).join('');
 }
 
 document.getElementById('logout-btn').addEventListener('click', () => {
@@ -457,7 +461,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = []) {
-    if (chats[roomId]) return; chats[roomId] = { name, isGroup, unread: 0, avatar, bgImage, members }; saveData();
+    if (chats[roomId]) return; chats[roomId] = { name, isGroup, unread: 0, avatar: avatar || DEFAULT_AVATAR, bgImage, members }; saveData();
 }
 
 async function openChatRoom(roomId) {
@@ -492,12 +496,17 @@ function updateChatListUI() {
         const room = chats[roomId]; totalUnread += room.unread;
         const li = document.createElement('li'); li.className = 'list-item';
         li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'1対1'}</div></div>`;
+        li.innerHTML = `<img src="${room.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'1対1'}</div></div>`;
         list.appendChild(li);
     });
     const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
     totalBadge.classList.toggle('hidden', totalUnread === 0);
 }
+
+document.getElementById('back-btn').addEventListener('click', async () => {
+    endCallState(); if (currentSubscription) { await supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    activeChatId = null; document.getElementById('chat-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden');
+});
 
 document.getElementById('attach-toggle-btn').addEventListener('click', () => { document.getElementById('attachment-menu').classList.toggle('hidden'); document.getElementById('stamp-picker').classList.add('hidden'); });
 document.getElementById('attach-file-trigger').addEventListener('click', () => { document.getElementById('chat-file-input').click(); });
@@ -536,7 +545,7 @@ document.getElementById('save-custom-stamp-btn').addEventListener('click', async
     if (f.files.length > 0) { stamps.push(await resizeImage(await readFileAsBase64(f.files[0]), 120, 120)); saveData(); renderStamps(); document.getElementById('modal-custom-stamp').classList.add('hidden'); }
 });
 
-async function sendMessageInternal(t) { if (t && activeChatId) await supabaseClient.from('messages').insert([{ channel: activeChatId, username: myUser.name, avatar: myUser.avatar, message: t }]); }
+async function sendMessageInternal(t) { if (t && activeChatId) await supabaseClient.from('messages').insert([{ channel: activeChatId, username: myUser.name, avatar: myUser.avatar || DEFAULT_AVATAR, message: t }]); }
 document.getElementById('send-btn').addEventListener('click', () => { const i = document.getElementById('message-input'); if (i.value.trim()) { sendMessageInternal(i.value.trim()); i.value = ''; } });
 document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { sendMessageInternal(e.target.value.trim()); e.target.value = ''; } });
 
@@ -545,6 +554,11 @@ function addMessageToScreen(data) {
     const isMe = data.username === myUser.name;
     const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me':'other'}`;
     if (data.id) group.setAttribute('data-msg-id', data.id);
+    
+    // 安全なSVG画像フォールバック設定
+    const avatarImg = document.createElement('img'); avatarImg.className = 'msg-avatar'; 
+    avatarImg.src = data.avatar || DEFAULT_AVATAR;
+
     const content = document.createElement('div'); content.className = 'msg-content';
     if (!isMe) {
         const nameLbl = document.createElement('div'); nameLbl.className = 'msg-username'; nameLbl.innerText = data.username; content.appendChild(nameLbl);
@@ -566,10 +580,10 @@ function addMessageToScreen(data) {
     }
     const timeText = document.createElement('span'); timeText.className = 'time';
     timeText.innerHTML = `${isMe ? '<span class="read-mark">既読 </span>':''}${new Date(data.created_at || Date.now()).getHours().toString().padStart(2,'0')}:${new Date(data.created_at || Date.now()).getMinutes().toString().padStart(2,'0')}`;
-    wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(content); messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content); messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// 通話シグナリング & レイアウト制御
+// 通話制御
 document.getElementById('call-layout-btn').addEventListener('click', () => {
     const vc = document.getElementById('video-container'); vc.classList.remove(callLayouts[currentLayoutIndex]);
     currentLayoutIndex = (currentLayoutIndex + 1) % callLayouts.length; vc.classList.add(callLayouts[currentLayoutIndex]);

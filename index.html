@@ -37,7 +37,7 @@
 
             <div class="my-profile-container" id="my-profile-bg">
                 <div class="my-profile">
-                    <img id="my-avatar" src="https://via.placeholder.com/50" class="avatar" alt="avatar">
+                    <img id="my-avatar" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%23007AFF'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👤</text></svg>" class="avatar" alt="avatar">
                     <div class="profile-info">
                         <span id="my-name-display" class="profile-name">ユーザー名</span>
                         <span id="my-id-display" style="font-size: 11px; opacity: 0.8;">ID: 未設定</span>
@@ -57,7 +57,7 @@
                     <ul id="friend-requests-list" class="list-view"></ul>
                 </div>
                 <div class="friend-list-section">
-                    <h4>フレンド (${id}人)</h4>
+                    <h4>フレンド</h4>
                     <ul id="friend-list" class="list-view"></ul>
                 </div>
             </div>
@@ -178,7 +178,7 @@
                 <div id="form-qr-friend" class="hidden">
                     <p style="font-size: 12px; color:#555; margin-bottom:10px;">このQRコードを相手に読み取ってもらうか、相手のIDを入力して申請してください。</p>
                     <div id="my-qrcode-container" style="display:flex; justify-content:center; padding:10px; background:#fff; border-radius:8px;"></div>
-                    <input type="text" id="qr-scan-simulate" placeholder="模擬スキャン: 相手のIDを入力して決定" style="margin-top:15px;">
+                    <input type="text" id="qr-scan-simulate" placeholder="相手のIDを入力して模擬読取" style="margin-top:15px;">
                     <div class="modal-buttons">
                         <button id="simulate-scan-btn" class="btn-primary">QRコード読取実行</button>
                         <button class="btn-secondary closeModal">閉じる</button>
