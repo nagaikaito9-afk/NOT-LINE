@@ -18,6 +18,15 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
 };
 let chats = {};
 let activeFriendsList = []; // 相互に登録し合っているフレンドリスト
+
+// ★エラーの原因箇所を確実に定義・修正
+let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%23FFD700'/><circle cx='28' cy='30' r='5' fill='%23333'/><circle cx='52' cy='30' r='5' fill='%23333'/><path d='M25 50 Q40 68 55 50' stroke='%23333' stroke-width='4' fill='none'/></svg>",
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>"
+];
+
+let activeChatId = null;
+let currentSubscription = null;
 let friendRealtimeChannel = null;
 let pendingGoogleUser = null; 
 
@@ -246,7 +255,6 @@ function completeLogin() {
     setupFriendRealtimeSubscription(); 
 }
 
-// リアルタイムでフレンド関係の更新を監視
 function setupFriendRealtimeSubscription() {
     if (!myUser) return;
     if (friendRealtimeChannel) supabaseClient.removeChannel(friendRealtimeChannel);
@@ -259,17 +267,14 @@ function setupFriendRealtimeSubscription() {
         .subscribe();
 }
 
-// 【コアロジック変更】お互いがIDを登録し合っている（相互登録）データのみを抽出
 async function loadFriendSystemData() {
     if (!myUser) return;
     
-    // 1. 自分が登録したデータ(status='pending'を登録の意として扱う)
     const { data: mySends } = await supabaseClient
         .from('friends')
         .select('receiver_uid')
         .eq('sender_uid', myUser.googleId);
 
-    // 2. 自分を登録してくれているデータ
     const { data: myReceives } = await supabaseClient
         .from('friends')
         .select('sender_uid')
@@ -279,7 +284,6 @@ async function loadFriendSystemData() {
         const sendIds = mySends.map(f => f.receiver_uid);
         const receiveIds = myReceives.map(f => f.sender_uid);
         
-        // 相互登録しているID（共通のID）を抽出
         const mutualIds = sendIds.filter(id => receiveIds.includes(id));
 
         if (mutualIds.length > 0) {
@@ -294,7 +298,6 @@ async function loadFriendSystemData() {
         }
     }
 
-    // チャット一覧（トークルーム）として相互フレンドを登録
     chats = {};
     activeFriendsList.forEach(f => {
         const pair = [myUser.googleId, f.id].sort();
@@ -305,7 +308,6 @@ async function loadFriendSystemData() {
     updateChatListUI();
 }
 
-// フレンドID直接即時登録機能
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const targetIdInput = document.getElementById('friend-id-input').value.trim();
     if (!targetIdInput) return;
@@ -317,7 +319,6 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
         return;
     }
 
-    // 既に登録済みかチェック
     const { data: existing } = await supabaseClient.from('friends')
         .select('id')
         .eq('sender_uid', myUser.googleId)
@@ -328,10 +329,8 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
         return;
     }
 
-    // 登録実行（即座インサート）
     await supabaseClient.from('friends').insert([{ sender_uid: myUser.googleId, receiver_uid: targetUser.id, status: 'pending' }]);
     
-    // 相手がすでに自分を登録しているか（相互か）確認
     const { data: checkMutual } = await supabaseClient.from('friends')
         .select('id')
         .eq('sender_uid', targetUser.id)
@@ -348,7 +347,6 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     loadFriendSystemData();
 });
 
-// チャットリストのレンダリング ＋ 【新機能: フレンドのリアルタイム検索・絞り込み表示】
 function updateChatListUI(filterQuery = "") {
     const list = document.getElementById('chat-list'); 
     list.innerHTML = ''; 
@@ -359,7 +357,6 @@ function updateChatListUI(filterQuery = "") {
     Object.keys(chats).forEach(roomId => {
         const room = chats[roomId];
         
-        // 検索クエリがある場合、名前が不一致ならスキップ（絞り込み検索）
         if (query && !room.name.toLowerCase().includes(query)) {
             return;
         }
@@ -442,7 +439,6 @@ document.getElementById('change-bg-file').addEventListener('change', async (e) =
     }
 });
 document.getElementById('delete-friend-btn').addEventListener('click', async () => {
-    // 登録データをデータベースから削除してフレンド関係を解消
     if (activeChatId) {
         const room = chats[activeChatId];
         const targetFriend = activeFriendsList.find(f => f.name === room.name);
@@ -521,7 +517,6 @@ function setupAdvancedFeatures() {
         charCounter.style.color = len >= 500 ? '#ff4d4f' : '#888';
     });
 
-    // トークルーム内のメッセージ検索
     document.getElementById('chat-search-input').addEventListener('input', (e) => {
         const query = e.target.value.toLowerCase().trim();
         const groups = document.querySelectorAll('.message-group');
@@ -534,7 +529,6 @@ function setupAdvancedFeatures() {
         });
     });
 
-    // 【新規機能】メイン画面のフレンドリアルタイム検索入力監視
     document.getElementById('friend-search-input').addEventListener('input', (e) => {
         updateChatListUI(e.target.value);
     });
@@ -689,3 +683,33 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 });
 document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
 document.querySelectorAll('.closeModal').forEach(btn => { btn.addEventListener('click', (e) => { e.target.closest('.modal').classList.add('hidden'); }); });
+
+function setupFileInputListeners() {
+    const pairs = [['edit-avatar-file', 'edit-avatar-name'], ['edit-profile-bg-file', 'edit-bg-name'], ['custom-stamp-file', 'stamp-file-name']];
+    pairs.forEach(([inputId, nameId]) => {
+        const el = document.getElementById(inputId); const nameEl = document.getElementById(nameId);
+        if (el && nameEl) el.addEventListener('change', (e) => { nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択"; });
+    });
+}
+
+document.getElementById('edit-profile-trigger').addEventListener('click', () => {
+    document.getElementById('edit-name-input').value = myUser.name;
+    document.getElementById('modal-profile').classList.remove('hidden');
+});
+
+document.getElementById('save-profile-btn').addEventListener('click', async () => {
+    const newName = document.getElementById('edit-name-input').value.trim();
+    const fileInput = document.getElementById('edit-avatar-file');
+    const bgFileInput = document.getElementById('edit-profile-bg-file');
+    if (newName) myUser.name = newName;
+    if (fileInput.files.length > 0) { myUser.avatar = await resizeImage(await readFileAsBase64(fileInput.files[0]), 150, 150); }
+    if (bgFileInput.files.length > 0) {
+        myUser.profileBg = await resizeImage(await readFileAsBase64(bgFileInput.files[0]), 400, 250);
+        document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
+    }
+    saveData();
+    document.getElementById('my-name-display').innerText = myUser.name;
+    document.getElementById('my-avatar').src = myUser.avatar;
+    document.getElementById('modal-profile').classList.add('hidden');
+    showNotification("プロフィールを更新しました");
+});
