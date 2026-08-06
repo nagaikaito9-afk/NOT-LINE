@@ -21,10 +21,99 @@ let pendingFriendsList = []; // 一方的に登録しているフレンドリス
 
 const DEFAULT_GROUP_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%2334C759'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👥</text></svg>";
 
-// ★自作スタンプの保存・初期値
-let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
+// ★50種類の猫スタンプ（黒猫25種＋モフ白猫25種）を生成する関数
+function generate50CatStamps() {
+    const blackCatTexts = [
+        "ごめん...", "え!?", "ありがとう", "おつかれ！", "了解！",
+        "すやすや", "なるほど", "！？", "おはよ", "おやすみ",
+        "？？？", "いいね！", "❤️", "チラッ", "またね",
+        "がんばれ", "しょんぼり", "ぺこり", "えっ", "まかせろ",
+        "うれしい", "はてな", "わーい", "涙...", "OK!"
+    ];
+    
+    const whiteCatTexts = [
+        "よろしく", "スキ❤️", "？？？", "お疲れ様", "すまぬ",
+        "神！", "すやすや", "なぞ", "うそでしょ", "はーい",
+        "了解", "サンキュー", "むにゅ", "あそぼ", "むり",
+        "ファイト", "尊い...", "ねむい", "どやッ", "チラッ",
+        "おめでとう", "ぐっ👍", "大好き", "ぺこり", "てへっ"
+    ];
+
+    const catStamps = [];
+
+    // 黒猫 25種
+    blackCatTexts.forEach((text, i) => {
+        const eyeBg = (i % 5 === 0) ? '#ffcc00' : (i % 3 === 0 ? '#66ccff' : '#a3e635');
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>` +
+            `<path d='M25 42 L20 15 L45 30 Z' fill='%23222222'/>` +
+            `<path d='M75 42 L80 15 L55 30 Z' fill='%23222222'/>` +
+            `<circle cx='50' cy='52' r='32' fill='%23222222'/>` +
+            `<circle cx='38' cy='46' r='6' fill='${encodeURIComponent(eyeBg)}'/>` +
+            `<circle cx='62' cy='46' r='6' fill='${encodeURIComponent(eyeBg)}'/>` +
+            `<circle cx='38' cy='46' r='2' fill='%23000'/>` +
+            `<circle cx='62' cy='46' r='2' fill='%23000'/>` +
+            `<ellipse cx='50' cy='55' rx='3' ry='2' fill='%23ff9999'/>` +
+            `<path d='M46 59 Q50 64 54 59' stroke='%23ffffff' stroke-width='2' fill='none'/>` +
+            `<rect x='5' y='68' width='90' height='26' rx='8' fill='%23ffffff' stroke='%23333333' stroke-width='2'/>` +
+            `<text x='50' y='86' font-family='sans-serif' font-size='13' font-weight='bold' fill='%23111111' text-anchor='middle'>${encodeURIComponent(text)}</text>` +
+            `</svg>`;
+        catStamps.push(`data:image/svg+xml;utf8,${svg}`);
+    });
+
+    // モフモフ白猫 25種
+    whiteCatTexts.forEach((text, i) => {
+        const eyeColor = (i % 4 === 0) ? '#3b82f6' : (i % 2 === 0 ? '#10b981' : '#f59e0b');
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>` +
+            `<path d='M22 40 L15 10 L42 25 Z' fill='%23fefefe' stroke='%23e2e8f0' stroke-width='2'/>` +
+            `<path d='M26 36 L21 16 L40 25 Z' fill='%23ffb6c1'/>` +
+            `<path d='M78 40 L85 10 L58 25 Z' fill='%23fefefe' stroke='%23e2e8f0' stroke-width='2'/>` +
+            `<path d='M74 36 L79 16 L60 25 Z' fill='%23ffb6c1'/>` +
+            `<circle cx='50' cy='50' r='35' fill='%23ffffff' stroke='%23cbd5e1' stroke-width='2'/>` +
+            `<circle cx='20' cy='52' r='10' fill='%23ffffff'/>` +
+            `<circle cx='80' cy='52' r='10' fill='%23ffffff'/>` +
+            `<ellipse cx='34' cy='46' rx='6' ry='8' fill='${encodeURIComponent(eyeColor)}'/>` +
+            `<ellipse cx='66' cy='46' rx='6' ry='8' fill='${encodeURIComponent(eyeColor)}'/>` +
+            `<circle cx='33' cy='44' r='2' fill='%23fff'/>` +
+            `<circle cx='65' cy='44' r='2' fill='%23fff'/>` +
+            `<ellipse cx='30' cy='54' rx='5' ry='3' fill='%23ffb6c1' opacity='0.7'/>` +
+            `<ellipse cx='70' cy='54' rx='5' ry='3' fill='%23ffb6c1' opacity='0.7'/>` +
+            `<ellipse cx='50' cy='53' rx='2.5' ry='1.5' fill='%23ff9999'/>` +
+            `<rect x='5' y='68' width='90' height='26' rx='8' fill='%23ffffff' stroke='%2338bdf8' stroke-width='2'/>` +
+            `<text x='50' y='86' font-family='sans-serif' font-size='13' font-weight='bold' fill='%230f172a' text-anchor='middle'>${encodeURIComponent(text)}</text>` +
+            `</svg>`;
+        catStamps.push(`data:image/svg+xml;utf8,${svg}`);
+    });
+
+    return catStamps;
+}
+
+const cat50Stamps = generate50CatStamps();
+
+// ★自作スタンプ・全体スタンプの保存・初期値（50種の猫スタンプを標準包含）
+let loadedStamps = JSON.parse(localStorage.getItem('notline_stamps'));
+let stamps = loadedStamps || [
     "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%23FFD700'/><circle cx='28' cy='30' r='5' fill='%23333'/><circle cx='52' cy='30' r='5' fill='%23333'/><path d='M25 50 Q40 68 55 50' stroke='%23333' stroke-width='4' fill='none'/></svg>",
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>"
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>",
+    ...cat50Stamps
+];
+
+// もし既存の保存スタンプに猫スタンプが含まれていなければ統合
+cat50Stamps.forEach(cs => {
+    if (!stamps.includes(cs)) stamps.push(cs);
+});
+
+// ★スタンプファイル（パック）
+let stampPacks = JSON.parse(localStorage.getItem('notline_stamp_packs')) || [
+    {
+        id: "pack_cat_50",
+        name: "ねこねこスタンプ 50選",
+        description: "かわいらしい黒猫とモフっとした白猫のスタンプセット（全50種類）",
+        price: 0,
+        authorName: "公式",
+        authorUid: "official",
+        isPublic: true,
+        stamps: cat50Stamps
+    }
 ];
 
 let activeChatId = null;
@@ -47,6 +136,7 @@ let currentFilterIndex = 0;
 function saveData() {
     if (myUser) localStorage.setItem('notline_myUser', JSON.stringify(myUser));
     localStorage.setItem('notline_stamps', JSON.stringify(stamps));
+    localStorage.setItem('notline_stamp_packs', JSON.stringify(stampPacks));
     localStorage.setItem('notline_stories', JSON.stringify(stories));
     localStorage.setItem('notline_settings', JSON.stringify(appSettings));
     
@@ -197,6 +287,7 @@ window.onload = function() {
     applySettingsUI();
     setupFileInputListeners();
     setupAdvancedFeatures();
+    initStampFeatures();
 
     if (myUser && myUser.name) {
         completeLogin();
@@ -619,15 +710,34 @@ document.getElementById('delete-friend-btn').addEventListener('click', async () 
     delete chats[activeChatId]; saveData(); loadFriendSystemData(); document.getElementById('back-btn').click(); document.getElementById('modal-chat-menu').classList.add('hidden');
 });
 
-document.getElementById('stamp-toggle-btn').addEventListener('click', () => { document.getElementById('stamp-picker').classList.toggle('hidden'); document.getElementById('attachment-menu').classList.add('hidden'); renderStamps(); });
-function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')">`).join(''); }
-function sendStamp(url) { sendMessageInternal(`[STAMP]:${url}`); document.getElementById('stamp-picker').classList.add('hidden'); }
-
-document.getElementById('add-custom-stamp-trigger').addEventListener('click', () => { document.getElementById('modal-custom-stamp').classList.remove('hidden'); });
-document.getElementById('save-custom-stamp-btn').addEventListener('click', async () => {
-    const f = document.getElementById('custom-stamp-file');
-    if (f.files.length > 0) { stamps.push(await resizeImage(await readFileAsBase64(f.files[0]), 120, 120)); saveData(); renderStamps(); document.getElementById('modal-custom-stamp').classList.add('hidden'); }
+document.getElementById('stamp-toggle-btn').addEventListener('click', () => {
+    document.getElementById('stamp-picker').classList.toggle('hidden');
+    document.getElementById('attachment-menu').classList.add('hidden');
+    renderStamps();
 });
+
+function renderStamps() {
+    const list = document.getElementById('stamp-list');
+    if (!list) return;
+    list.innerHTML = '';
+    
+    stamps.forEach(s => {
+        const img = document.createElement('img');
+        img.src = s;
+        img.className = 'stamp-item';
+        img.addEventListener('click', () => {
+            sendStamp(s);
+        });
+        list.appendChild(img);
+    });
+}
+
+function sendStamp(url) {
+    if (!url || !activeChatId) return;
+    sendMessageInternal(`[STAMP]:${url}`);
+    const picker = document.getElementById('stamp-picker');
+    if (picker) picker.classList.add('hidden');
+}
 
 async function sendMessageInternal(t) { if (t && activeChatId) await supabaseClient.from('messages').insert([{ channel: activeChatId, username: myUser.name, avatar: myUser.avatar || DEFAULT_AVATAR, message: t }]); }
 document.getElementById('send-btn').addEventListener('click', () => { const i = document.getElementById('message-input'); if (i.value.trim()) { sendMessageInternal(i.value.trim()); i.value = ''; document.getElementById('char-counter').innerText = '0 / 500'; } });
@@ -1117,3 +1227,392 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     document.getElementById('modal-profile').classList.add('hidden');
     showNotification("プロフィールを更新しました");
 });
+
+// ★スタンプ機能拡張（スタンプファイル、ストア、作成、お絵かき）
+function initStampFeatures() {
+    const stampMgrBtn = document.getElementById('stamp-manager-btn');
+    if (stampMgrBtn) {
+        stampMgrBtn.addEventListener('click', () => {
+            document.getElementById('modal-stamp-manager').classList.remove('hidden');
+            renderMyStampPacks();
+        });
+    }
+
+    const tabMyBtn = document.getElementById('tab-my-stamps-btn');
+    const tabPubBtn = document.getElementById('tab-public-stamps-btn');
+    const areaMy = document.getElementById('area-my-stamps');
+    const areaPub = document.getElementById('area-public-stamps');
+
+    if (tabMyBtn && tabPubBtn) {
+        tabMyBtn.addEventListener('click', () => {
+            tabMyBtn.classList.replace('btn-secondary', 'btn-primary');
+            tabPubBtn.classList.replace('btn-primary', 'btn-secondary');
+            areaMy.classList.remove('hidden');
+            areaPub.classList.add('hidden');
+            renderMyStampPacks();
+        });
+
+        tabPubBtn.addEventListener('click', () => {
+            tabPubBtn.classList.replace('btn-secondary', 'btn-primary');
+            tabMyBtn.classList.replace('btn-primary', 'btn-secondary');
+            areaPub.classList.remove('hidden');
+            areaMy.classList.add('hidden');
+            renderPublicStampPacks();
+        });
+    }
+
+    const openCreateStampBtn = document.getElementById('open-create-stamp-btn');
+    if (openCreateStampBtn) {
+        openCreateStampBtn.addEventListener('click', () => {
+            document.getElementById('modal-create-stamp').classList.remove('hidden');
+            setupCanvasEvents();
+        });
+    }
+
+    const openCreatePackBtn = document.getElementById('open-create-pack-btn');
+    if (openCreatePackBtn) {
+        openCreatePackBtn.addEventListener('click', () => {
+            openCreatePackModal();
+        });
+    }
+
+    const modeDrawBtn = document.getElementById('stamp-mode-draw-btn');
+    const modeFileBtn = document.getElementById('stamp-mode-file-btn');
+    const drawArea = document.getElementById('stamp-draw-area');
+    const fileArea = document.getElementById('stamp-file-area');
+
+    if (modeDrawBtn && modeFileBtn) {
+        modeDrawBtn.addEventListener('click', () => {
+            modeDrawBtn.classList.replace('btn-secondary', 'btn-primary');
+            modeFileBtn.classList.replace('btn-primary', 'btn-secondary');
+            drawArea.classList.remove('hidden');
+            fileArea.classList.add('hidden');
+        });
+        modeFileBtn.addEventListener('click', () => {
+            modeFileBtn.classList.replace('btn-secondary', 'btn-primary');
+            modeDrawBtn.classList.replace('btn-primary', 'btn-secondary');
+            fileArea.classList.remove('hidden');
+            drawArea.classList.add('hidden');
+        });
+    }
+
+    const saveNewStampBtn = document.getElementById('save-new-stamp-btn');
+    if (saveNewStampBtn) {
+        saveNewStampBtn.addEventListener('click', async () => {
+            const isDrawMode = !drawArea.classList.contains('hidden');
+            let stampData = null;
+
+            if (isDrawMode) {
+                const canvas = document.getElementById('stamp-canvas');
+                stampData = canvas.toDataURL('image/png');
+            } else {
+                const fileEl = document.getElementById('custom-stamp-file-new');
+                if (fileEl.files.length > 0) {
+                    stampData = await resizeImage(await readFileAsBase64(fileEl.files[0]), 150, 150);
+                }
+            }
+
+            if (stampData) {
+                stamps.push(stampData);
+                saveData();
+                showNotification("新しいスタンプを作成しました！");
+                document.getElementById('modal-create-stamp').classList.add('hidden');
+                renderMyStampPacks();
+                renderStamps();
+            } else {
+                showNotification("スタンプ画像を描くか選択してください");
+            }
+        });
+    }
+
+    const savePackLocalBtn = document.getElementById('save-pack-local-btn');
+    if (savePackLocalBtn) {
+        savePackLocalBtn.addEventListener('click', () => savePackInternal(false));
+    }
+
+    const savePackPubBtn = document.getElementById('save-pack-publish-btn');
+    if (savePackPubBtn) {
+        savePackPubBtn.addEventListener('click', () => savePackInternal(true));
+    }
+}
+
+function renderMyStampPacks() {
+    const list = document.getElementById('my-stamp-packs-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (!stampPacks || stampPacks.length === 0) {
+        list.innerHTML = '<p style="color:#aaa; font-size:12px;">マイスタンプファイルはありません</p>';
+        return;
+    }
+
+    stampPacks.forEach(pack => {
+        const item = document.createElement('div');
+        item.style.border = '1px solid #e2e8f0';
+        item.style.borderRadius = '8px';
+        item.style.padding = '8px';
+        item.style.marginBottom = '8px';
+        item.style.background = '#fafafa';
+
+        const title = document.createElement('div');
+        title.style.fontWeight = 'bold';
+        title.style.fontSize = '14px';
+        title.innerText = `${pack.name} (${(pack.stamps || []).length}個)`;
+
+        const desc = document.createElement('div');
+        desc.style.fontSize = '11px';
+        desc.style.color = '#666';
+        desc.innerText = `${pack.description || ''} | ${pack.price > 0 ? pack.price + '円' : '無料'} ${pack.isPublic ? '🌐公開中' : '🔒非公開'}`;
+
+        const grid = document.createElement('div');
+        grid.style.display = 'flex';
+        grid.style.gap = '4px';
+        grid.style.overflowX = 'auto';
+        grid.style.marginTop = '6px';
+
+        (pack.stamps || []).slice(0, 8).forEach(sUrl => {
+            const img = document.createElement('img');
+            img.src = sUrl;
+            img.style.width = '36px';
+            img.style.height = '36px';
+            img.style.objectFit = 'contain';
+            grid.appendChild(img);
+        });
+
+        item.appendChild(title);
+        item.appendChild(desc);
+        item.appendChild(grid);
+        list.appendChild(item);
+    });
+}
+
+async function renderPublicStampPacks() {
+    const list = document.getElementById('public-stamp-packs-list');
+    if (!list) return;
+    list.innerHTML = '<p style="color:#888; font-size:12px;">読み込み中...</p>';
+
+    let publicPacks = [];
+    try {
+        const { data, error } = await supabaseClient.from('stamp_packs').select('*').order('created_at', { ascending: false });
+        if (!error && data) {
+            publicPacks = data.map(d => ({
+                id: d.id,
+                name: d.name,
+                description: d.description,
+                price: d.price || 0,
+                authorName: d.author_name,
+                stamps: d.stamps || []
+            }));
+        }
+    } catch(e) { console.error(e); }
+
+    stampPacks.filter(p => p.isPublic).forEach(p => {
+        if (!publicPacks.some(pub => pub.name === p.name)) publicPacks.push(p);
+    });
+
+    if (publicPacks.length === 0) {
+        list.innerHTML = '<p style="color:#aaa; font-size:12px;">公開されているスタンプはありません</p>';
+        return;
+    }
+
+    list.innerHTML = '';
+    publicPacks.forEach(pack => {
+        const card = document.createElement('div');
+        card.style.border = '1px solid #cbd5e1';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px';
+        card.style.marginBottom = '10px';
+        card.style.background = '#ffffff';
+
+        card.innerHTML = `
+            <div style="font-weight:bold; font-size:14px; color:#1e293b;">${pack.name}</div>
+            <div style="font-size:11px; color:#64748b; margin-top:2px;">
+                作者: ${pack.authorName || '匿名'} | 価格: <b style="color:${pack.price > 0 ? '#ef4444' : '#10b981'};">${pack.price > 0 ? pack.price + '円' : '無料'}</b>
+            </div>
+            <div style="font-size:12px; color:#334155; margin-top:4px;">${pack.description || ''}</div>
+            <div class="stamp-preview-scroll" style="display:flex; gap:4px; overflow-x:auto; margin:8px 0;">
+                ${(pack.stamps || []).map(s => `<img src="${s}" style="width:36px; height:36px; object-fit:contain;">`).join('')}
+            </div>
+            <button class="btn-small btn-primary add-public-pack-btn" style="width:100%;">このスタンプを新しいファイルとして追加</button>
+        `;
+
+        card.querySelector('.add-public-pack-btn').addEventListener('click', () => {
+            addPublicPackToMyStamps(pack);
+        });
+
+        list.appendChild(card);
+    });
+}
+
+function addPublicPackToMyStamps(pack) {
+    if (pack.price > 0) {
+        const ok = confirm(`「${pack.name}」を ${pack.price}円 で購入してファイルに追加しますか？`);
+        if (!ok) return;
+    }
+
+    const newPack = {
+        id: `pack_${Date.now()}`,
+        name: pack.name,
+        description: pack.description,
+        price: pack.price,
+        authorName: pack.authorName,
+        isPublic: false,
+        stamps: pack.stamps || []
+    };
+
+    stampPacks.push(newPack);
+    (pack.stamps || []).forEach(s => {
+        if (!stamps.includes(s)) stamps.push(s);
+    });
+
+    saveData();
+    showNotification(`🎉 「${pack.name}」をマイスタンプファイルに追加しました！`);
+    renderMyStampPacks();
+    renderStamps();
+}
+
+let isDrawing = false;
+let isEraser = false;
+
+function setupCanvasEvents() {
+    const canvas = document.getElementById('stamp-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    const colorInput = document.getElementById('stamp-pen-color');
+    const sizeInput = document.getElementById('stamp-pen-size');
+    const eraserBtn = document.getElementById('stamp-eraser-toggle');
+    const clearBtn = document.getElementById('stamp-canvas-clear');
+
+    if (clearBtn) {
+        clearBtn.onclick = () => ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (eraserBtn) {
+        eraserBtn.onclick = () => {
+            isEraser = !isEraser;
+            eraserBtn.innerText = isEraser ? '🧹 消しゴム中' : '✏️ ペン';
+        };
+    }
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function startDraw(e) {
+        isDrawing = true;
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const pos = getPos(e);
+        ctx.lineWidth = sizeInput ? sizeInput.value : 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        if (isEraser) {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.strokeStyle = 'rgba(0,0,0,1)';
+        } else {
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.strokeStyle = colorInput ? colorInput.value : '#000000';
+        }
+
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+    }
+
+    function endDraw() {
+        isDrawing = false;
+        ctx.beginPath();
+    }
+
+    canvas.onmousedown = startDraw;
+    canvas.onmousemove = draw;
+    canvas.onmouseup = endDraw;
+    canvas.ontouchstart = startDraw;
+    canvas.ontouchmove = draw;
+    canvas.ontouchend = endDraw;
+}
+
+function openCreatePackModal() {
+    document.getElementById('modal-create-pack').classList.remove('hidden');
+    document.getElementById('pack-name-input').value = '';
+    document.getElementById('pack-desc-input').value = '';
+    document.getElementById('pack-price-input').value = '0';
+
+    const selectGrid = document.getElementById('pack-stamp-select-grid');
+    if (!selectGrid) return;
+    selectGrid.innerHTML = '';
+
+    stamps.forEach((sUrl, idx) => {
+        const wrapper = document.createElement('label');
+        wrapper.style.display = 'inline-block';
+        wrapper.style.position = 'relative';
+        wrapper.style.cursor = 'pointer';
+
+        wrapper.innerHTML = `
+            <input type="checkbox" class="pack-stamp-checkbox" value="${idx}" checked style="position:absolute; top:2px; left:2px; z-index:2;">
+            <img src="${sUrl}" style="width:40px; height:40px; border:1px solid #ccc; border-radius:4px; object-fit:contain;">
+        `;
+        selectGrid.appendChild(wrapper);
+    });
+}
+
+async function savePackInternal(publish = false) {
+    const name = document.getElementById('pack-name-input').value.trim();
+    const desc = document.getElementById('pack-desc-input').value.trim();
+    const price = parseInt(document.getElementById('pack-price-input').value) || 0;
+
+    if (!name) {
+        showNotification("ファイル名を入力してください");
+        return;
+    }
+
+    const checkboxes = document.querySelectorAll('.pack-stamp-checkbox:checked');
+    const selectedStamps = Array.from(checkboxes).map(cb => stamps[parseInt(cb.value)]);
+
+    if (selectedStamps.length === 0) {
+        showNotification("入れるスタンプを少なくとも1つ選択してください");
+        return;
+    }
+
+    const newPack = {
+        id: `pack_${Date.now()}`,
+        name: name,
+        description: desc,
+        price: price,
+        authorName: myUser ? myUser.name : "匿名",
+        authorUid: myUser ? myUser.googleId : "",
+        isPublic: publish,
+        stamps: selectedStamps
+    };
+
+    stampPacks.push(newPack);
+    saveData();
+
+    if (publish) {
+        try {
+            await supabaseClient.from('stamp_packs').insert([{
+                id: newPack.id,
+                name: newPack.name,
+                description: newPack.description,
+                price: newPack.price,
+                author_name: newPack.authorName,
+                stamps: newPack.stamps
+            }]).catch(()=>{});
+        } catch(e){ console.error(e); }
+        showNotification(`🎉 「${name}」をみんなのスタンプに公開保存しました！`);
+    } else {
+        showNotification(`📦 「${name}」を保存しました`);
+    }
+
+    document.getElementById('modal-create-pack').classList.add('hidden');
+    renderMyStampPacks();
+}

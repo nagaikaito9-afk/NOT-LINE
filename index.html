@@ -32,6 +32,7 @@
                 <span id="header-title">トーク</span>
                 <span id="total-unread" class="badge hidden" style="margin-left: 6px; position: static;">0</span>
                 <div class="header-right">
+                    <button class="header-icon-btn" id="stamp-manager-btn" title="スタンプ">🎨</button>
                     <button class="header-icon-btn" id="story-btn">📖</button>
                     <button class="header-icon-btn" id="add-btn">➕</button>
                     <button class="header-icon-btn" id="settings-btn">⚙️</button>
@@ -79,7 +80,6 @@
             <div id="stamp-picker" class="stamp-picker hidden">
                 <div class="stamp-header">
                     <span>スタンプを選択</span>
-                    <button id="add-custom-stamp-trigger" class="btn-small">＋ 自作スタンプ</button>
                 </div>
                 <div id="stamp-list" class="stamp-grid"></div>
             </div>
@@ -221,16 +221,91 @@
             </div>
         </div>
 
-        <div id="modal-custom-stamp" class="modal hidden">
-            <div class="modal-content">
-                <h3>自作スタンプを追加</h3>
-                <div class="line-file-btn-wrapper" style="justify-content: center;">
-                    <label for="custom-stamp-file" class="line-custom-file-btn">画像を選択</label>
-                    <span id="stamp-file-name" class="selected-file-name">未選択</span>
-                    <input type="file" id="custom-stamp-file" class="hidden-file-input" accept="image/*">
+        <!-- スタンプ総合管理モーダル -->
+        <div id="modal-stamp-manager" class="modal hidden">
+            <div class="modal-content" style="max-width: 480px; width: 92%;">
+                <h3>🎨 スタンプ管理・ストア</h3>
+                <div class="tab-buttons" style="display: flex; gap: 8px; margin: 12px 0;">
+                    <button id="tab-my-stamps-btn" class="btn-small btn-primary" style="flex: 1;">マイスタンプ</button>
+                    <button id="tab-public-stamps-btn" class="btn-small btn-secondary" style="flex: 1;">みんなのスタンプ</button>
                 </div>
-                <div class="modal-buttons">
-                    <button id="save-custom-stamp-btn" class="btn-primary">追加する</button>
+                
+                <!-- マイスタンプ表示エリア -->
+                <div id="area-my-stamps">
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                        <button id="open-create-stamp-btn" class="btn-small btn-primary">🎨 スタンプを作成</button>
+                        <button id="open-create-pack-btn" class="btn-small btn-secondary">📦 スタンプファイルを追加</button>
+                    </div>
+                    <div id="my-stamp-packs-list" style="max-height: 280px; overflow-y: auto; text-align: left;"></div>
+                </div>
+
+                <!-- みんなのスタンプ表示エリア -->
+                <div id="area-public-stamps" class="hidden">
+                    <p style="font-size: 11px; color: #888; text-anchor: start; margin-bottom: 10px;">みんなが公開したスタンプファイルをダウンロードして使えます。</p>
+                    <div id="public-stamp-packs-list" style="max-height: 280px; overflow-y: auto; text-align: left;"></div>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 15px;">
+                    <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- スタンプ作成モーダル（画像アップロード ＆ キャンバスでお絵かき） -->
+        <div id="modal-create-stamp" class="modal hidden">
+            <div class="modal-content" style="max-width: 400px; width: 90%;">
+                <h3>🎨 スタンプを作成</h3>
+                <div class="tab-buttons" style="display: flex; gap: 8px; margin-bottom: 12px;">
+                    <button id="stamp-mode-draw-btn" class="btn-small btn-primary" style="flex: 1;">絵を描く</button>
+                    <button id="stamp-mode-file-btn" class="btn-small btn-secondary" style="flex: 1;">画像から作成</button>
+                </div>
+
+                <!-- お絵かきモード -->
+                <div id="stamp-draw-area">
+                    <div style="background: #f5f5f7; border-radius: 8px; padding: 10px; display: inline-block;">
+                        <canvas id="stamp-canvas" width="200" height="200" style="border: 2px dashed #ccc; background: white; border-radius: 8px; cursor: crosshair; touch-action: none;"></canvas>
+                    </div>
+                    <div style="display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+                        <input type="color" id="stamp-pen-color" value="#000000" style="width: 32px; height: 32px; border: none; cursor: pointer;">
+                        <input type="range" id="stamp-pen-size" min="2" max="24" value="6" style="width: 90px;">
+                        <button id="stamp-eraser-toggle" class="btn-small btn-secondary">✏️ ペン</button>
+                        <button id="stamp-canvas-clear" class="btn-small btn-secondary">🗑️ 消去</button>
+                    </div>
+                </div>
+
+                <!-- ファイル読み込みモード -->
+                <div id="stamp-file-area" class="hidden" style="margin: 15px 0;">
+                    <div class="line-file-btn-wrapper" style="justify-content: center;">
+                        <label for="custom-stamp-file-new" class="line-custom-file-btn">画像を選択</label>
+                        <span id="stamp-file-name-new" class="selected-file-name">未選択</span>
+                        <input type="file" id="custom-stamp-file-new" class="hidden-file-input" accept="image/*">
+                    </div>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 15px;">
+                    <button id="save-new-stamp-btn" class="btn-primary">スタンプを保存</button>
+                    <button class="btn-secondary closeModal">キャンセル</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- スタンプファイル（パック）作成・編集モーダル -->
+        <div id="modal-create-pack" class="modal hidden">
+            <div class="modal-content" style="max-width: 440px; width: 90%;">
+                <h3>📦 スタンプファイルを追加・編集</h3>
+                <input type="text" id="pack-name-input" placeholder="ファイル名 (例: おしごとスタンプ)">
+                <input type="text" id="pack-desc-input" placeholder="説明 (任意)">
+                <div style="display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 13px;">
+                    <label>価格:</label>
+                    <input type="number" id="pack-price-input" min="0" value="0" style="width: 90px; padding: 4px 8px;" placeholder="0"> 円 (0で無料)
+                </div>
+
+                <p style="font-size: 12px; color: #555; text-align: left; margin: 10px 0 4px 0;">ファイルに入れるスタンプを選択:</p>
+                <div id="pack-stamp-select-grid" class="stamp-grid" style="max-height: 160px; overflow-y: auto; border: 1px solid #eee; padding: 8px; border-radius: 8px;"></div>
+
+                <div class="modal-buttons" style="margin-top: 15px; flex-wrap: wrap; gap: 6px;">
+                    <button id="save-pack-local-btn" class="btn-secondary">保存</button>
+                    <button id="save-pack-publish-btn" class="btn-primary">保存して公開</button>
                     <button class="btn-secondary closeModal">キャンセル</button>
                 </div>
             </div>
