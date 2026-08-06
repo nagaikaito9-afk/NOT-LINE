@@ -463,22 +463,17 @@ function updateChatListUI(filterQuery = "") {
         
         li.onclick = () => {
             if (room.isPendingReceived) {
-                if (confirm(`🎉 ${room.name} (@${room.user_id}) さんからフレンド追加されています！あなたも登録してトークを開始しますか？`)) {
-                    addFriendByUid(room.targetUid, room.name);
-                }
-            } else if (room.isPending) {
-                showNotification(`⏳ ${room.name} さんの登録待ちです。相手からも登録されるとトークが開始します。`);
-            } else {
-                openChatRoom(roomId);
+                addFriendByUid(room.targetUid, room.name);
             }
+            openChatRoom(roomId);
         };
 
         const displayName = room.customNickname || room.name;
         let subText = room.isGroup ? 'グループ' : 'フレンド';
         if (room.isPendingReceived) {
-            subText = '📩 あなたを追加しています (タップして登録)';
+            subText = '📩 あなたを追加中 (相互トーク可能)';
         } else if (room.isPending) {
-            subText = '⚠️ 相手の登録待ち';
+            subText = '⏳ 相手の登録待ち (メッセージ送受信可)';
         }
 
         li.innerHTML = `
