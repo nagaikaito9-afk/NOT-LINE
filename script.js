@@ -8,7 +8,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%23007AFF'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👤</text></svg>";
 
 let myUser = JSON.parse(localStorage.getItem('notline_myUser')) || null;
-let chatsData = JSON.parse(localStorage.getItem('notline_chats')) || {};
+let chats = JSON.parse(localStorage.getItem('notline_chats')) || {};
 let stories = JSON.parse(localStorage.getItem('notline_stories')) || [];
 let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     font: "system-ui",
@@ -16,13 +16,12 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     bubbleShape: "15px",
     theme: "light"
 };
-let chats = {};
 let activeFriendsList = []; // 相互に登録し合っているフレンドリスト
 let pendingFriendsList = []; // 一方的に登録しているフレンドリスト
 
 const DEFAULT_GROUP_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%2334C759'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👥</text></svg>";
 
-// ★エラーの原因箇所を確実に定義・修正
+// ★自作スタンプの保存・初期値
 let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
     "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%23FFD700'/><circle cx='28' cy='30' r='5' fill='%23333'/><circle cx='52' cy='30' r='5' fill='%23333'/><path d='M25 50 Q40 68 55 50' stroke='%23333' stroke-width='4' fill='none'/></svg>",
     "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>"
@@ -31,6 +30,7 @@ let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
 let activeChatId = null;
 let currentSubscription = null;
 let friendRealtimeChannel = null;
+let globalMessagesChannel = null;
 let pendingGoogleUser = null; 
 
 // WebRTC 用の変数
@@ -54,12 +54,15 @@ function saveData() {
     Object.keys(chats).forEach(id => {
         chatsToSave[id] = {
             name: chats[id].name,
-            isGroup: chats[id].isGroup,
+            user_id: chats[id].user_id || null,
+            targetUid: chats[id].targetUid || null,
+            isGroup: chats[id].isGroup || false,
             unread: chats[id].unread || 0,
             avatar: chats[id].avatar,
-            bgImage: chats[id].bgImage,
+            bgImage: chats[id].bgImage || "",
             members: chats[id].members || [],
             isPending: chats[id].isPending || false,
+            isPendingReceived: chats[id].isPendingReceived || false,
             customNickname: chats[id].customNickname || null,
             isMuted: chats[id].isMuted || false,
             isBlocked: chats[id].isBlocked || false,
@@ -99,16 +102,23 @@ function showNotification(msg) {
 function applySettingsUI() {
     document.body.style.fontFamily = appSettings.font;
     
-    if (appSettings.theme === 'dark') {
-        document.getElementById('app-container').classList.add('dark-theme');
-    } else {
-        document.getElementById('app-container').classList.remove('dark-theme');
+    const appContainer = document.getElementById('app-container');
+    if (appContainer) {
+        if (appSettings.theme === 'dark') {
+            appContainer.classList.add('dark-theme');
+        } else {
+            appContainer.classList.remove('dark-theme');
+        }
     }
     
     const fontSelect = document.getElementById('font-select');
     if (fontSelect) fontSelect.value = appSettings.font;
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) themeSelect.value = appSettings.theme;
+    const bubbleColorPicker = document.getElementById('bubble-color-picker');
+    if (bubbleColorPicker && appSettings.bubbleColor) bubbleColorPicker.value = appSettings.bubbleColor;
+    const bubbleShapeSelect = document.getElementById('bubble-shape-select');
+    if (bubbleShapeSelect && appSettings.bubbleShape) bubbleShapeSelect.value = appSettings.bubbleShape;
 
     saveData();
 }
@@ -261,6 +271,7 @@ function completeLogin() {
 
     loadFriendSystemData();
     setupFriendRealtimeSubscription(); 
+    setupGlobalMessageSubscription();
 }
 
 function setupFriendRealtimeSubscription() {
@@ -271,6 +282,49 @@ function setupFriendRealtimeSubscription() {
     friendRealtimeChannel
         .on('postgres_changes', { event: '*', schema: 'public', table: 'friends' }, () => {
             loadFriendSystemData(); 
+        })
+        .subscribe();
+}
+
+function setupGlobalMessageSubscription() {
+    if (!myUser) return;
+    if (globalMessagesChannel) supabaseClient.removeChannel(globalMessagesChannel);
+
+    globalMessagesChannel = supabaseClient.channel('public:messages:global');
+    globalMessagesChannel
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+            const newMsg = payload.new;
+            if (!newMsg || newMsg.username === myUser.name) return;
+
+            const roomId = newMsg.channel;
+            
+            // 現在そのチャット画面を開いている場合は画面内描画で済むため未読カウントは増やさない
+            if (activeChatId === roomId) {
+                return;
+            }
+
+            if (!chats[roomId]) {
+                chats[roomId] = {
+                    name: newMsg.username || "トーク",
+                    isGroup: roomId.startsWith('group_'),
+                    unread: 1,
+                    avatar: newMsg.avatar || DEFAULT_AVATAR,
+                    isHidden: false
+                };
+            } else {
+                chats[roomId].unread = (chats[roomId].unread || 0) + 1;
+            }
+
+            saveData();
+            updateChatListUI();
+
+            if (!chats[roomId].isMuted && !chats[roomId].isBlocked) {
+                const textContent = newMsg.message.startsWith('[STAMP]:') ? "スタンプが届きました" :
+                                   newMsg.message.startsWith('[FILE]:') ? "ファイルが届きました" :
+                                   newMsg.message;
+                const senderDisplayName = chats[roomId].customNickname || chats[roomId].name || newMsg.username;
+                sendAppNotification(senderDisplayName, textContent);
+            }
         })
         .subscribe();
 }
@@ -498,8 +552,8 @@ function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members =
 
 async function openChatRoom(roomId) {
     if (currentSubscription) { await supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
-    activeChatId = roomId; const room = chats[roomId]; if(!room) return; room.unread = 0; updateChatListUI();
-    document.getElementById('chat-target-name').innerText = room.name;
+    activeChatId = roomId; const room = chats[roomId]; if(!room) return; room.unread = 0; saveData(); updateChatListUI();
+    document.getElementById('chat-target-name').innerText = room.customNickname || room.name;
     document.getElementById('messages').innerHTML = '';
     const chatScreen = document.getElementById('chat-screen');
     chatScreen.style.backgroundImage = room.bgImage ? `url(${room.bgImage})` : 'none';
@@ -713,6 +767,22 @@ function setupAdvancedFeatures() {
         appSettings.theme = e.target.value;
         applySettingsUI();
     });
+
+    const bubbleColorPicker = document.getElementById('bubble-color-picker');
+    if (bubbleColorPicker) {
+        bubbleColorPicker.addEventListener('change', (e) => {
+            appSettings.bubbleColor = e.target.value;
+            saveData();
+        });
+    }
+
+    const bubbleShapeSelect = document.getElementById('bubble-shape-select');
+    if (bubbleShapeSelect) {
+        bubbleShapeSelect.addEventListener('change', (e) => {
+            appSettings.bubbleShape = e.target.value;
+            saveData();
+        });
+    }
 
     const msgInput = document.getElementById('message-input');
     const charCounter = document.getElementById('char-counter');
@@ -1012,6 +1082,7 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     endCallState(); 
     if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
     if (friendRealtimeChannel) { supabaseClient.removeChannel(friendRealtimeChannel); friendRealtimeChannel = null; }
+    if (globalMessagesChannel) { supabaseClient.removeChannel(globalMessagesChannel); globalMessagesChannel = null; }
     document.getElementById('main-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('hidden');
 });
 document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
