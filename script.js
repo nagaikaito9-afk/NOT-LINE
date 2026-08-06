@@ -275,24 +275,48 @@ function setupFriendRealtimeSubscription() {
         .subscribe();
 }
 
+async function addFriendByUid(targetUid, targetName) {
+    const myUidStr = String(myUser.googleId);
+    const targetUidStr = String(targetUid);
+
+    const { data: existing } = await supabaseClient.from('friends')
+        .select('id')
+        .eq('sender_uid', myUidStr)
+        .eq('receiver_uid', targetUidStr);
+
+    if (!existing || existing.length === 0) {
+        await supabaseClient.from('friends').insert([{ sender_uid: myUidStr, receiver_uid: targetUidStr, status: 'active' }]);
+    }
+
+    showNotification(`🎉 ${targetName} と相互フレンドになりました！トークが可能です。`);
+    await loadFriendSystemData();
+}
+
 async function loadFriendSystemData() {
     if (!myUser) return;
     
-    const { data: mySends } = await supabaseClient
+    const myUidStr = String(myUser.googleId);
+
+    const { data: mySends, error: sendErr } = await supabaseClient
         .from('friends')
         .select('receiver_uid')
-        .eq('sender_uid', myUser.googleId);
+        .eq('sender_uid', myUidStr);
 
-    const { data: myReceives } = await supabaseClient
+    const { data: myReceives, error: recvErr } = await supabaseClient
         .from('friends')
         .select('sender_uid')
-        .eq('receiver_uid', myUser.googleId);
+        .eq('receiver_uid', myUidStr);
 
-    const sendIds = (mySends || []).map(f => f.receiver_uid);
-    const receiveIds = (myReceives || []).map(f => f.sender_uid);
+    if (sendErr || recvErr) {
+        console.error("Friends load error:", sendErr, recvErr);
+    }
+
+    const sendIds = (mySends || []).map(f => String(f.receiver_uid));
+    const receiveIds = (myReceives || []).map(f => String(f.sender_uid));
     
     const mutualIds = sendIds.filter(id => receiveIds.includes(id));
     const pendingSentIds = sendIds.filter(id => !receiveIds.includes(id));
+    const pendingReceivedIds = receiveIds.filter(id => !sendIds.includes(id));
 
     if (mutualIds.length > 0) {
         const { data: usersData } = await supabaseClient
@@ -314,6 +338,15 @@ async function loadFriendSystemData() {
         pendingFriendsList = [];
     }
 
+    let pendingReceivedList = [];
+    if (pendingReceivedIds.length > 0) {
+        const { data: receivedUsersData } = await supabaseClient
+            .from('users')
+            .select('id, user_id, name, avatar')
+            .in('id', pendingReceivedIds);
+        pendingReceivedList = receivedUsersData || [];
+    }
+
     // 既存のグループチャット等は保持する
     const existingGroupChats = {};
     Object.keys(chats).forEach(id => {
@@ -324,18 +357,37 @@ async function loadFriendSystemData() {
 
     chats = { ...existingGroupChats };
 
-    // 相互フレンド（トーク可能）
+    // 1. 相互フレンド（トーク可能）
     activeFriendsList.forEach(f => {
-        const pair = [myUser.googleId, f.id].sort();
+        const pair = [myUidStr, String(f.id)].sort();
         const roomId = `chat_${pair[0]}_${pair[1]}`;
         registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR, "", [], false);
     });
 
-    // 片思いフレンド（追加時点から一覧表示・登録待ち）
+    // 2. 片思いフレンド（自分が登録済み・相手の登録待ち）
     pendingFriendsList.forEach(f => {
-        const pair = [myUser.googleId, f.id].sort();
+        const pair = [myUidStr, String(f.id)].sort();
         const roomId = `chat_${pair[0]}_${pair[1]}`;
         registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR, "", [], true);
+    });
+
+    // 3. 自分を追加してくれた相手（ワンタップで登録可能）
+    pendingReceivedList.forEach(f => {
+        const pair = [myUidStr, String(f.id)].sort();
+        const roomId = `chat_${pair[0]}_${pair[1]}`;
+        if (!chats[roomId]) {
+            chats[roomId] = {
+                name: f.name,
+                user_id: f.user_id,
+                targetUid: f.id,
+                isGroup: false,
+                unread: 0,
+                avatar: f.avatar || DEFAULT_AVATAR,
+                isPendingReceived: true,
+                isPending: true,
+                isHidden: false
+            };
+        }
     });
 
     updateChatListUI();
@@ -352,22 +404,22 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
         return;
     }
 
+    const myUidStr = String(myUser.googleId);
+    const targetUidStr = String(targetUser.id);
+
     const { data: existing } = await supabaseClient.from('friends')
         .select('id')
-        .eq('sender_uid', myUser.googleId)
-        .eq('receiver_uid', targetUser.id);
+        .eq('sender_uid', myUidStr)
+        .eq('receiver_uid', targetUidStr);
 
-    if (existing && existing.length > 0) {
-        showNotification("この相手のIDは既に登録済みです");
-        return;
+    if (!existing || existing.length === 0) {
+        await supabaseClient.from('friends').insert([{ sender_uid: myUidStr, receiver_uid: targetUidStr, status: 'active' }]);
     }
 
-    await supabaseClient.from('friends').insert([{ sender_uid: myUser.googleId, receiver_uid: targetUser.id, status: 'pending' }]);
-    
     const { data: checkMutual } = await supabaseClient.from('friends')
         .select('id')
-        .eq('sender_uid', targetUser.id)
-        .eq('receiver_uid', myUser.googleId);
+        .eq('sender_uid', targetUidStr)
+        .eq('receiver_uid', myUidStr);
 
     if (checkMutual && checkMutual.length > 0) {
         showNotification(`🎉 ${targetUser.name} と相互フレンドになりました！トークが可能です。`);
@@ -377,7 +429,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
 
     document.getElementById('modal-add').classList.add('hidden');
     document.getElementById('friend-id-input').value = '';
-    loadFriendSystemData();
+    await loadFriendSystemData();
 });
 
 function updateChatListUI(filterQuery = "") {
@@ -398,9 +450,14 @@ function updateChatListUI(filterQuery = "") {
 
         totalUnread += (room.unread || 0);
         const li = document.createElement('li'); 
-        li.className = 'list-item' + (room.isPending ? ' pending-item' : '');
+        li.className = 'list-item' + ((room.isPending || room.isPendingReceived) ? ' pending-item' : '');
+        
         li.onclick = () => {
-            if (room.isPending) {
+            if (room.isPendingReceived) {
+                if (confirm(`🎉 ${room.name} (@${room.user_id}) さんからフレンド追加されています！あなたも登録してトークを開始しますか？`)) {
+                    addFriendByUid(room.targetUid, room.name);
+                }
+            } else if (room.isPending) {
                 showNotification(`⏳ ${room.name} さんの登録待ちです。相手からも登録されるとトークが開始します。`);
             } else {
                 openChatRoom(roomId);
@@ -409,7 +466,9 @@ function updateChatListUI(filterQuery = "") {
 
         const displayName = room.customNickname || room.name;
         let subText = room.isGroup ? 'グループ' : 'フレンド';
-        if (room.isPending) {
+        if (room.isPendingReceived) {
+            subText = '📩 あなたを追加しています (タップして登録)';
+        } else if (room.isPending) {
             subText = '⚠️ 相手の登録待ち';
         }
 
@@ -438,6 +497,7 @@ function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members =
         chats[roomId].name = name;
         chats[roomId].avatar = avatar || (isGroup ? DEFAULT_GROUP_AVATAR : DEFAULT_AVATAR);
         chats[roomId].isPending = isPending;
+        chats[roomId].isPendingReceived = false;
     }
     saveData();
 }
