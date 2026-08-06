@@ -149,15 +149,41 @@
             </div>
         </div>
 
+        <div id="modal-add-choice" class="modal hidden">
+            <div class="modal-content">
+                <h3>新規作成・追加</h3>
+                <div class="menu-list">
+                    <button id="choice-add-friend-btn" class="menu-btn">👤 フレンドをID登録</button>
+                    <button id="choice-create-group-btn" class="menu-btn">👥 グループチャットを作成</button>
+                </div>
+                <div class="modal-buttons" style="margin-top: 15px;">
+                    <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
         <div id="modal-add" class="modal hidden">
             <div class="modal-content">
                 <h3>フレンドID登録</h3>
-                <p style="font-size: 12px; color:#555; margin-bottom:10px;">相手の登録IDを入力してください。お互いに登録し合うとチャット可能になります。</p>
+                <p style="font-size: 12px; color:#555; margin-bottom:10px;">相手の登録IDを入力してください。登録時点でリストに追加され、相手からも登録されるとトークが開始します。</p>
                 
                 <input type="text" id="friend-id-input" placeholder="相手の登録IDを入力">
                 <div class="modal-buttons">
                     <button id="add-friend-submit" class="btn-primary">登録する</button>
                     <button class="btn-secondary closeModal">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="modal-create-group" class="modal hidden">
+            <div class="modal-content">
+                <h3>グループチャットを作成</h3>
+                <input type="text" id="group-name-input" placeholder="グループ名を入力">
+                <p style="font-size: 12px; color:#555; text-align: left; margin: 8px 0 4px 0;">メンバーを選択 (相互フレンド):</p>
+                <div id="group-friends-select-list" class="checkbox-list"></div>
+                <div class="modal-buttons">
+                    <button id="create-group-submit" class="btn-primary">作成</button>
+                    <button class="btn-secondary closeModal">キャンセル</button>
                 </div>
             </div>
         </div>

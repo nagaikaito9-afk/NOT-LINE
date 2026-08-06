@@ -18,6 +18,9 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
 };
 let chats = {};
 let activeFriendsList = []; // 相互に登録し合っているフレンドリスト
+let pendingFriendsList = []; // 一方的に登録しているフレンドリスト
+
+const DEFAULT_GROUP_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%2334C759'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👥</text></svg>";
 
 // ★エラーの原因箇所を確実に定義・修正
 let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
@@ -52,10 +55,15 @@ function saveData() {
         chatsToSave[id] = {
             name: chats[id].name,
             isGroup: chats[id].isGroup,
-            unread: chats[id].unread,
+            unread: chats[id].unread || 0,
             avatar: chats[id].avatar,
             bgImage: chats[id].bgImage,
-            members: chats[id].members || []
+            members: chats[id].members || [],
+            isPending: chats[id].isPending || false,
+            customNickname: chats[id].customNickname || null,
+            isMuted: chats[id].isMuted || false,
+            isBlocked: chats[id].isBlocked || false,
+            isHidden: chats[id].isHidden || false
         };
     });
     localStorage.setItem('notline_chats', JSON.stringify(chatsToSave));
@@ -280,29 +288,54 @@ async function loadFriendSystemData() {
         .select('sender_uid')
         .eq('receiver_uid', myUser.googleId);
 
-    if (mySends && myReceives) {
-        const sendIds = mySends.map(f => f.receiver_uid);
-        const receiveIds = myReceives.map(f => f.sender_uid);
-        
-        const mutualIds = sendIds.filter(id => receiveIds.includes(id));
+    const sendIds = (mySends || []).map(f => f.receiver_uid);
+    const receiveIds = (myReceives || []).map(f => f.sender_uid);
+    
+    const mutualIds = sendIds.filter(id => receiveIds.includes(id));
+    const pendingSentIds = sendIds.filter(id => !receiveIds.includes(id));
 
-        if (mutualIds.length > 0) {
-            const { data: usersData } = await supabaseClient
-                .from('users')
-                .select('id', 'user_id', 'name', 'avatar')
-                .in('id', mutualIds);
-                
-            activeFriendsList = usersData || [];
-        } else {
-            activeFriendsList = [];
-        }
+    if (mutualIds.length > 0) {
+        const { data: usersData } = await supabaseClient
+            .from('users')
+            .select('id, user_id, name, avatar')
+            .in('id', mutualIds);
+        activeFriendsList = usersData || [];
+    } else {
+        activeFriendsList = [];
     }
 
-    chats = {};
+    if (pendingSentIds.length > 0) {
+        const { data: pendingUsersData } = await supabaseClient
+            .from('users')
+            .select('id, user_id, name, avatar')
+            .in('id', pendingSentIds);
+        pendingFriendsList = pendingUsersData || [];
+    } else {
+        pendingFriendsList = [];
+    }
+
+    // 既存のグループチャット等は保持する
+    const existingGroupChats = {};
+    Object.keys(chats).forEach(id => {
+        if (chats[id].isGroup) {
+            existingGroupChats[id] = chats[id];
+        }
+    });
+
+    chats = { ...existingGroupChats };
+
+    // 相互フレンド（トーク可能）
     activeFriendsList.forEach(f => {
         const pair = [myUser.googleId, f.id].sort();
         const roomId = `chat_${pair[0]}_${pair[1]}`;
-        registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR);
+        registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR, "", [], false);
+    });
+
+    // 片思いフレンド（追加時点から一覧表示・登録待ち）
+    pendingFriendsList.forEach(f => {
+        const pair = [myUser.googleId, f.id].sort();
+        const roomId = `chat_${pair[0]}_${pair[1]}`;
+        registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR, "", [], true);
     });
 
     updateChatListUI();
@@ -313,7 +346,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     if (!targetIdInput) return;
     if (targetIdInput === myUser.user_id) { showNotification("自分のIDは登録できません"); return; }
 
-    const { data: targetUser } = await supabaseClient.from('users').select('id', 'name').eq('user_id', targetIdInput).maybeSingle();
+    const { data: targetUser } = await supabaseClient.from('users').select('id, name, user_id').eq('user_id', targetIdInput).maybeSingle();
     if (!targetUser) {
         showNotification("指定されたIDのユーザーが見つかりません");
         return;
@@ -339,7 +372,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
     if (checkMutual && checkMutual.length > 0) {
         showNotification(`🎉 ${targetUser.name} と相互フレンドになりました！トークが可能です。`);
     } else {
-        showNotification(`@${targetIdInput} を登録しました。相手側からも登録されるとトークが始まります。`);
+        showNotification(`@${targetIdInput} を登録しました。相手からの登録待ちとして追加されました。`);
     }
 
     document.getElementById('modal-add').classList.add('hidden');
@@ -349,6 +382,7 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
 
 function updateChatListUI(filterQuery = "") {
     const list = document.getElementById('chat-list'); 
+    if(!list) return;
     list.innerHTML = ''; 
     let totalUnread = 0;
     
@@ -357,15 +391,36 @@ function updateChatListUI(filterQuery = "") {
     Object.keys(chats).forEach(roomId => {
         const room = chats[roomId];
         
-        if (query && !room.name.toLowerCase().includes(query)) {
+        if (room.isHidden) return;
+        if (query && !(room.customNickname || room.name).toLowerCase().includes(query)) {
             return;
         }
 
-        totalUnread += room.unread;
+        totalUnread += (room.unread || 0);
         const li = document.createElement('li'); 
-        li.className = 'list-item';
-        li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'フレンド'}</div></div>`;
+        li.className = 'list-item' + (room.isPending ? ' pending-item' : '');
+        li.onclick = () => {
+            if (room.isPending) {
+                showNotification(`⏳ ${room.name} さんの登録待ちです。相手からも登録されるとトークが開始します。`);
+            } else {
+                openChatRoom(roomId);
+            }
+        };
+
+        const displayName = room.customNickname || room.name;
+        let subText = room.isGroup ? 'グループ' : 'フレンド';
+        if (room.isPending) {
+            subText = '⚠️ 相手の登録待ち';
+        }
+
+        li.innerHTML = `
+            <img src="${room.avatar || DEFAULT_AVATAR}" class="avatar">
+            <div class="item-info">
+                <div class="item-title">${displayName}</div>
+                <div class="item-sub">${subText}</div>
+            </div>
+            ${room.unread > 0 ? `<span class="badge">${room.unread}</span>` : ''}
+        `;
         list.appendChild(li);
     });
     
@@ -376,8 +431,15 @@ function updateChatListUI(filterQuery = "") {
     }
 }
 
-function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = []) {
-    if (chats[roomId]) return; chats[roomId] = { name, isGroup, unread: 0, avatar: avatar || DEFAULT_AVATAR, bgImage, members }; saveData();
+function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = [], isPending = false) {
+    if (!chats[roomId]) {
+        chats[roomId] = { name, isGroup, unread: 0, avatar: avatar || DEFAULT_AVATAR, bgImage, members, isPending, isHidden: false };
+    } else {
+        chats[roomId].name = name;
+        chats[roomId].avatar = avatar || (isGroup ? DEFAULT_GROUP_AVATAR : DEFAULT_AVATAR);
+        chats[roomId].isPending = isPending;
+    }
+    saveData();
 }
 
 async function openChatRoom(roomId) {
@@ -463,12 +525,101 @@ async function sendMessageInternal(t) { if (t && activeChatId) await supabaseCli
 document.getElementById('send-btn').addEventListener('click', () => { const i = document.getElementById('message-input'); if (i.value.trim()) { sendMessageInternal(i.value.trim()); i.value = ''; document.getElementById('char-counter').innerText = '0 / 500'; } });
 document.getElementById('message-input').addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { sendMessageInternal(e.target.value.trim()); e.target.value = ''; document.getElementById('char-counter').innerText = '0 / 500'; } });
 
+let selectedMsgData = null;
+
+function showContextMenu(x, y, msgData) {
+    selectedMsgData = msgData;
+    const menu = document.getElementById('msg-context-menu');
+    if (!menu) return;
+
+    const deleteBtn = document.getElementById('ctx-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.style.display = (msgData.username === myUser.name) ? 'block' : 'none';
+    }
+
+    menu.style.left = `${Math.min(x, window.innerWidth - 140)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - 80)}px`;
+    menu.classList.remove('hidden');
+}
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('msg-context-menu');
+    if (menu && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+});
+
+document.getElementById('ctx-copy-btn').addEventListener('click', () => {
+    if (selectedMsgData && selectedMsgData.message) {
+        let textToCopy = selectedMsgData.message;
+        if (textToCopy.startsWith('[STAMP]:')) textToCopy = "[スタンプ]";
+        else if (textToCopy.startsWith('[FILE]:')) textToCopy = "[ファイル]";
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            showNotification("メッセージをコピーしました");
+        }).catch(() => {
+            showNotification("コピーに失敗しました");
+        });
+    }
+    document.getElementById('msg-context-menu').classList.add('hidden');
+});
+
+document.getElementById('ctx-delete-btn').addEventListener('click', async () => {
+    if (selectedMsgData && selectedMsgData.id) {
+        const { error } = await supabaseClient.from('messages').delete().eq('id', selectedMsgData.id);
+        if (error) {
+            showNotification("送信取り消しに失敗しました");
+        } else {
+            showNotification("メッセージの送信を取り消しました");
+            const elem = document.querySelector(`[data-msg-id="${selectedMsgData.id}"]`);
+            if (elem) elem.remove();
+        }
+    }
+    document.getElementById('msg-context-menu').classList.add('hidden');
+});
+
+function attachContextMenu(element, msgData) {
+    let pressTimer;
+    element.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, msgData);
+    });
+
+    element.addEventListener('touchstart', (e) => {
+        pressTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            showContextMenu(touch.clientX, touch.clientY, msgData);
+        }, 500);
+    });
+    element.addEventListener('touchend', () => clearTimeout(pressTimer));
+    element.addEventListener('touchmove', () => clearTimeout(pressTimer));
+}
+
 function addMessageToScreen(data) {
     const messagesDiv = document.getElementById('messages'); if(!messagesDiv) return;
+
+    if (data.message.startsWith('[GROUP_INFO]:')) {
+        try {
+            const info = JSON.parse(data.message.replace('[GROUP_INFO]:', ''));
+            if (info.members && info.members.includes(myUser.googleId)) {
+                registerChatRoom(data.channel, info.name, true, DEFAULT_GROUP_AVATAR, "", info.members, false);
+                updateChatListUI();
+            }
+            const sysMsg = document.createElement('div');
+            sysMsg.className = 'system-message';
+            sysMsg.innerText = `👥 ${data.username} がグループ「${info.name}」を作成しました`;
+            messagesDiv.appendChild(sysMsg);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return;
+        } catch(e){}
+    }
+
     const isMe = data.username === myUser.name;
     const group = document.createElement('div'); group.className = `message-group ${isMe ? 'me' : 'other'}`;
     if (data.id) group.setAttribute('data-msg-id', data.id);
     
+    attachContextMenu(group, data);
+
     const avatarImg = document.createElement('img'); avatarImg.className = 'msg-avatar'; 
     avatarImg.src = data.avatar || DEFAULT_AVATAR;
 
@@ -537,6 +688,64 @@ function setupAdvancedFeatures() {
     document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
     document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
     document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
+
+    // デスクトップ通知設定
+    const notifBtn = document.getElementById('request-notification-btn');
+    if (notifBtn) {
+        notifBtn.addEventListener('click', async () => {
+            if ("Notification" in window) {
+                const perm = await Notification.requestPermission();
+                if (perm === "granted") {
+                    showNotification("デスクトップ通知が有効化されました");
+                } else {
+                    showNotification("通知の許可が得られませんでした");
+                }
+            } else {
+                showNotification("このブラウザはデスクトップ通知に対応していません");
+            }
+        });
+    }
+
+    // トーク設定メニューのボタンハンドラー
+    document.getElementById('set-nickname-btn').addEventListener('click', () => {
+        if (!activeChatId) return;
+        const currentNick = chats[activeChatId].customNickname || chats[activeChatId].name;
+        const newNick = prompt("あだ名（表示名）を設定してください:", currentNick);
+        if (newNick !== null) {
+            chats[activeChatId].customNickname = newNick.trim() || null;
+            saveData();
+            updateChatListUI();
+            if (activeChatId) document.getElementById('chat-target-name').innerText = chats[activeChatId].customNickname || chats[activeChatId].name;
+            showNotification("あだ名を保存しました");
+        }
+        document.getElementById('modal-chat-menu').classList.add('hidden');
+    });
+
+    document.getElementById('toggle-mute-btn').addEventListener('click', () => {
+        if (!activeChatId) return;
+        chats[activeChatId].isMuted = !chats[activeChatId].isMuted;
+        saveData();
+        showNotification(chats[activeChatId].isMuted ? "通知をミュートしました" : "通知ミュートを解除しました");
+        document.getElementById('modal-chat-menu').classList.add('hidden');
+    });
+
+    document.getElementById('toggle-block-btn').addEventListener('click', () => {
+        if (!activeChatId) return;
+        chats[activeChatId].isBlocked = !chats[activeChatId].isBlocked;
+        saveData();
+        showNotification(chats[activeChatId].isBlocked ? "相手をブロックしました" : "ブロックを解除しました");
+        document.getElementById('modal-chat-menu').classList.add('hidden');
+    });
+
+    document.getElementById('toggle-hide-btn').addEventListener('click', () => {
+        if (!activeChatId) return;
+        chats[activeChatId].isHidden = true;
+        saveData();
+        updateChatListUI();
+        showNotification("トークを非表示にしました");
+        document.getElementById('modal-chat-menu').classList.add('hidden');
+        document.getElementById('back-btn').click();
+    });
 }
 
 document.getElementById('call-layout-btn').addEventListener('click', () => {
@@ -658,8 +867,78 @@ function showCallModal(m) {
     modal.classList.remove('hidden');
 }
 
+// ヘッダー追加ボタン & グループ作成関連処理
 document.getElementById('add-btn').addEventListener('click', () => {
+    document.getElementById('modal-add-choice').classList.remove('hidden');
+});
+
+document.getElementById('choice-add-friend-btn').addEventListener('click', () => {
+    document.getElementById('modal-add-choice').classList.add('hidden');
     document.getElementById('modal-add').classList.remove('hidden');
+});
+
+document.getElementById('choice-create-group-btn').addEventListener('click', () => {
+    document.getElementById('modal-add-choice').classList.add('hidden');
+    
+    const selectList = document.getElementById('group-friends-select-list');
+    selectList.innerHTML = '';
+    
+    if (activeFriendsList.length === 0) {
+        selectList.innerHTML = '<p style="font-size:12px; color:#888; text-align:center; padding: 10px 0;">相互フレンドがいません</p>';
+    } else {
+        activeFriendsList.forEach(f => {
+            const item = document.createElement('label');
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '8px';
+            item.style.margin = '6px 0';
+            item.style.fontSize = '13px';
+            item.style.cursor = 'pointer';
+            item.innerHTML = `
+                <input type="checkbox" class="group-friend-checkbox" value="${f.id}">
+                <img src="${f.avatar || DEFAULT_AVATAR}" class="avatar" style="width:24px; height:24px;">
+                <span>${f.name} (@${f.user_id})</span>
+            `;
+            selectList.appendChild(item);
+        });
+    }
+    
+    document.getElementById('modal-create-group').classList.remove('hidden');
+});
+
+document.getElementById('create-group-submit').addEventListener('click', async () => {
+    const groupName = document.getElementById('group-name-input').value.trim();
+    if (!groupName) {
+        showNotification("グループ名を入力してください");
+        return;
+    }
+    
+    const checkboxes = document.querySelectorAll('.group-friend-checkbox:checked');
+    const selectedMemberIds = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (selectedMemberIds.length === 0) {
+        showNotification("追加するフレンドを選択してください");
+        return;
+    }
+
+    const members = [myUser.googleId, ...selectedMemberIds];
+    const roomId = `group_${Date.now()}`;
+
+    registerChatRoom(roomId, groupName, true, DEFAULT_GROUP_AVATAR, "", members, false);
+    
+    const payload = {
+        name: groupName,
+        members: members,
+        createdBy: myUser.name
+    };
+
+    await sendMessageInternal(`[GROUP_INFO]:${JSON.stringify(payload)}`, roomId);
+    
+    document.getElementById('modal-create-group').classList.add('hidden');
+    document.getElementById('group-name-input').value = '';
+    showNotification(`グループ「${groupName}」を作成しました`);
+    updateChatListUI();
+    openChatRoom(roomId);
 });
 document.getElementById('story-btn').addEventListener('click', () => { document.getElementById('modal-story').classList.remove('hidden'); renderStories(); });
 document.getElementById('post-story-file').addEventListener('change', async (e) => {
