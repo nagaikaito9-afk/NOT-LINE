@@ -431,9 +431,9 @@ document.getElementById('add-friend-submit').addEventListener('click', async () 
         .eq('receiver_uid', myUidStr);
 
     if (checkMutual && checkMutual.length > 0) {
-        showNotification(`🎉 ${targetUser.name} と相互フレンドになりました！トークが可能です。`);
+        showNotification(`🎉 ${targetUser.name} と相互フレンドになりました！`);
     } else {
-        showNotification(`@${targetIdInput} を登録しました。相手からの登録待ちとして追加されました。`);
+        showNotification(`@${targetIdInput} (${targetUser.name}) をフレンドに追加しました！`);
     }
 
     document.getElementById('modal-add').classList.add('hidden');
@@ -459,22 +459,17 @@ function updateChatListUI(filterQuery = "") {
 
         totalUnread += (room.unread || 0);
         const li = document.createElement('li'); 
-        li.className = 'list-item' + ((room.isPending || room.isPendingReceived) ? ' pending-item' : '');
+        li.className = 'list-item';
         
         li.onclick = () => {
-            if (room.isPendingReceived) {
+            if (room.isPendingReceived && room.targetUid) {
                 addFriendByUid(room.targetUid, room.name);
             }
             openChatRoom(roomId);
         };
 
         const displayName = room.customNickname || room.name;
-        let subText = room.isGroup ? 'グループ' : 'フレンド';
-        if (room.isPendingReceived) {
-            subText = '📩 あなたを追加中 (相互トーク可能)';
-        } else if (room.isPending) {
-            subText = '⏳ 相手の登録待ち (メッセージ送受信可)';
-        }
+        const subText = room.isGroup ? 'グループ' : 'フレンド';
 
         li.innerHTML = `
             <img src="${room.avatar || DEFAULT_AVATAR}" class="avatar">
