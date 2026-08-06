@@ -49,32 +49,12 @@
                 </div>
             </div>
 
+            <div id="friend-search-container">
+                <input type="text" id="friend-search-input" placeholder="🔍 フレンドを検索...">
+            </div>
+
             <div id="tab-chats" class="tab-content active">
                 <ul id="chat-list" class="list-view"></ul>
-            </div>
-
-            <div id="tab-friends" class="tab-content">
-                <div class="friend-requests-section">
-                    <h4>フレンド申請一覧</h4>
-                    <ul id="friend-requests-list" class="list-view"></ul>
-                </div>
-                <div class="friend-list-section">
-                    <h4>フレンド</h4>
-                    <ul id="friend-list" class="list-view"></ul>
-                </div>
-            </div>
-
-            <div id="bottom-nav">
-                <button class="nav-btn active" data-tab="tab-chats">
-                    <span class="icon">💬</span>
-                    <span>トーク</span>
-                    <span id="total-unread" class="badge hidden">0</span>
-                </button>
-                <button class="nav-btn" data-tab="tab-friends">
-                    <span class="icon">👤</span>
-                    <span>フレンド</span>
-                    <span id="total-friend-requests" class="badge hidden">0</span>
-                </button>
             </div>
         </div>
 
@@ -171,38 +151,13 @@
 
         <div id="modal-add" class="modal hidden">
             <div class="modal-content">
-                <div class="add-type-selector">
-                    <button id="type-friend-btn" class="active">ID検索申請</button>
-                    <button id="type-qr-btn">マイQRコード</button>
-                    <button id="type-group-btn">グループ作成</button>
-                </div>
-
-                <div id="form-add-friend">
-                    <input type="text" id="friend-id-input" placeholder="追加したい相手の登録ID">
-                    <div class="modal-buttons">
-                        <button id="add-friend-submit" class="btn-primary">フレンド申請を送る</button>
-                        <button class="btn-secondary closeModal">閉じる</button>
-                    </div>
-                </div>
-
-                <div id="form-qr-friend" class="hidden">
-                    <p style="font-size: 12px; color:#555; margin-bottom:10px;">このQRコードを相手に読み取ってもらうか、相手のIDを入力して申請してください。</p>
-                    <div id="my-qrcode-container" style="display:flex; justify-content:center; padding:10px; background:#fff; border-radius:8px;"></div>
-                    <input type="text" id="qr-scan-simulate" placeholder="相手のIDを入力して模擬読取" style="margin-top:15px;">
-                    <div class="modal-buttons">
-                        <button id="simulate-scan-btn" class="btn-primary">QRコード読取実行</button>
-                        <button class="btn-secondary closeModal">閉じる</button>
-                    </div>
-                </div>
-
-                <div id="form-add-group" class="hidden">
-                    <input type="text" id="group-name-input" placeholder="グループ名">
-                    <p style="font-size: 12px; color: #666; margin: 5px 0;">メンバーを選択:</p>
-                    <div id="group-member-select" class="checkbox-list"></div>
-                    <div class="modal-buttons">
-                        <button id="create-group-submit" class="btn-primary">作成</button>
-                        <button class="btn-secondary closeModal">閉じる</button>
-                    </div>
+                <h3>フレンドID登録</h3>
+                <p style="font-size: 12px; color:#555; margin-bottom:10px;">相手の登録IDを入力してください。お互いに登録し合うとチャット可能になります。</p>
+                
+                <input type="text" id="friend-id-input" placeholder="相手の登録IDを入力">
+                <div class="modal-buttons">
+                    <button id="add-friend-submit" class="btn-primary">登録する</button>
+                    <button class="btn-secondary closeModal">閉じる</button>
                 </div>
             </div>
         </div>

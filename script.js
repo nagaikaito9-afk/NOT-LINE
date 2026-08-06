@@ -17,15 +17,8 @@ let appSettings = JSON.parse(localStorage.getItem('notline_settings')) || {
     theme: "light"
 };
 let chats = {};
-let activeFriendsList = []; 
-let activeRequestsList = []; 
-let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%23FFD700'/><circle cx='28' cy='30' r='5' fill='%23333'/><circle cx='52' cy='30' r='5' fill='%23333'/><path d='M25 50 Q40 68 55 50' stroke='%23333' stroke-width='4' fill='none'/></svg>",
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'><circle cx='40' cy='40' r='38' fill='%231E90FF'/><circle cx='28' cy='32' r='5' fill='%23fff'/><circle cx='52' cy='32' r='5' fill='%23fff'/><path d='M28 55 Q40 40 52 55' stroke='%23fff' stroke-width='4' fill='none'/></svg>"
-];
-let activeChatId = null;
-let currentSubscription = null;
-let friendRealtimeChannel = null; // 強化機能: フレンド申請検知用リアルタイムチャンネル
+let activeFriendsList = []; // 相互に登録し合っているフレンドリスト
+let friendRealtimeChannel = null;
 let pendingGoogleUser = null; 
 
 // WebRTC 用の変数
@@ -204,7 +197,6 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
                 .eq('user_id', inputId);
 
             if (checkError) {
-                console.error("IDチェック時にエラーが発生:", checkError);
                 alert("ID確認エラーが発生しました:\n" + checkError.message);
                 return;
             }
@@ -222,12 +214,9 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
                 profile_bg: ""
             };
 
-            const { error: upsertError } = await supabaseClient
-                .from('users')
-                .upsert(payload);
+            const { error: upsertError } = await supabaseClient.from('users').upsert(payload);
 
             if (upsertError) {
-                console.error("Supabaseへの保存処理エラー:", upsertError);
                 alert("登録エラー詳細:\n" + JSON.stringify(upsertError, null, 2));
                 return;
             }
@@ -238,11 +227,8 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
             pendingGoogleUser = null;
             completeLogin();
         } catch (err) {
-            console.error("想定外のエラー:", err);
             alert("例外エラーが発生しました: " + err.message);
         }
-    } else {
-        alert("Googleのログインセッションが見つかりません。画面をリロードしてやり直してください。");
     }
 });
 
@@ -256,289 +242,142 @@ function completeLogin() {
     document.getElementById('login-screen').classList.add('hidden');
     document.getElementById('main-screen').classList.remove('hidden');
 
-    chats = {};
-    Object.keys(chatsData).forEach(roomId => {
-        const room = chatsData[roomId];
-        registerChatRoom(roomId, room.name, room.isGroup, room.avatar, room.bgImage, room.members);
-    });
-
     loadFriendSystemData();
-    setupFriendRealtimeSubscription(); // 強化機能: ログイン完了時にフレンドのリアルタイム監視を開始
+    setupFriendRealtimeSubscription(); 
 }
 
-// 強化機能: 自分宛てのフレンド申請（更新・挿入）をリアルタイムで検知・通知する設定
+// リアルタイムでフレンド関係の更新を監視
 function setupFriendRealtimeSubscription() {
     if (!myUser) return;
     if (friendRealtimeChannel) supabaseClient.removeChannel(friendRealtimeChannel);
 
     friendRealtimeChannel = supabaseClient.channel(`public:friends:${myUser.googleId}`);
     friendRealtimeChannel
-        .on('postgres_changes', { 
-            event: '*', 
-            schema: 'public', 
-            table: 'friends'
-        }, payload => {
-            // 自分に対する処理かを確認
-            if (payload.new && payload.new.receiver_uid === myUser.googleId) {
-                if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
-                    sendAppNotification("フレンド通知", "新しいフレンド申請が届きました！");
-                }
-                loadFriendSystemData(); // データを再読み込みしてUIとバッジを自動更新
-            }
-            if (payload.new && payload.new.sender_uid === myUser.googleId && payload.new.status === 'accepted') {
-                sendAppNotification("フレンド通知", "フレンド申請が承認されました！");
-                loadFriendSystemData();
-            }
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'friends' }, () => {
+            loadFriendSystemData(); 
         })
         .subscribe();
 }
 
+// 【コアロジック変更】お互いがIDを登録し合っている（相互登録）データのみを抽出
 async function loadFriendSystemData() {
     if (!myUser) return;
     
-    const { data: acceptedData } = await supabaseClient
+    // 1. 自分が登録したデータ(status='pending'を登録の意として扱う)
+    const { data: mySends } = await supabaseClient
         .from('friends')
-        .select(`
-            id, status,
-            sender: sender_uid ( id, user_id, name, avatar ),
-            receiver: receiver_uid ( id, user_id, name, avatar )
-        `)
-        .or(`sender_uid.eq.${myUser.googleId},receiver_uid.eq.${myUser.googleId}`)
-        .eq('status', 'accepted');
+        .select('receiver_uid')
+        .eq('sender_uid', myUser.googleId);
 
-    if (acceptedData) {
-        activeFriendsList = acceptedData.map(row => {
-            return row.sender.id === myUser.googleId ? row.receiver : row.sender;
-        });
+    // 2. 自分を登録してくれているデータ
+    const { data: myReceives } = await supabaseClient
+        .from('friends')
+        .select('sender_uid')
+        .eq('receiver_uid', myUser.googleId);
+
+    if (mySends && myReceives) {
+        const sendIds = mySends.map(f => f.receiver_uid);
+        const receiveIds = myReceives.map(f => f.sender_uid);
+        
+        // 相互登録しているID（共通のID）を抽出
+        const mutualIds = sendIds.filter(id => receiveIds.includes(id));
+
+        if (mutualIds.length > 0) {
+            const { data: usersData } = await supabaseClient
+                .from('users')
+                .select('id', 'user_id', 'name', 'avatar')
+                .in('id', mutualIds);
+                
+            activeFriendsList = usersData || [];
+        } else {
+            activeFriendsList = [];
+        }
     }
 
-    const { data: pendingData } = await supabaseClient
-        .from('friends')
-        .select(`
-            id,
-            sender: sender_uid ( id, user_id, name, avatar )
-        `)
-        .eq('receiver_uid', myUser.googleId)
-        .eq('status', 'pending');
+    // チャット一覧（トークルーム）として相互フレンドを登録
+    chats = {};
+    activeFriendsList.forEach(f => {
+        const pair = [myUser.googleId, f.id].sort();
+        const roomId = `chat_${pair[0]}_${pair[1]}`;
+        registerChatRoom(roomId, f.name, false, f.avatar || DEFAULT_AVATAR);
+    });
 
-    if (pendingData) {
-        activeRequestsList = pendingData;
-    }
-
-    renderFriends();
-    renderFriendRequests();
     updateChatListUI();
-    updateFriendBadgeUI(); // 強化機能: バッジUIの更新を連動
 }
 
-// 強化機能: 未処理のフレンド申請数をナビバッジに反映
-function updateFriendBadgeUI() {
-    const badge = document.getElementById('total-friend-requests');
-    const count = activeRequestsList.length;
-    
-    if (badge) {
-        badge.innerText = count;
-        badge.classList.toggle('hidden', count === 0);
-    }
-}
-
+// フレンドID直接即時登録機能
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
     const targetIdInput = document.getElementById('friend-id-input').value.trim();
     if (!targetIdInput) return;
-    if (targetIdInput === myUser.user_id) { showNotification("自分のIDには申請できません"); return; }
+    if (targetIdInput === myUser.user_id) { showNotification("自分のIDは登録できません"); return; }
 
-    const { data: targetUser } = await supabaseClient.from('users').select('id').eq('user_id', targetIdInput).maybeSingle();
+    const { data: targetUser } = await supabaseClient.from('users').select('id', 'name').eq('user_id', targetIdInput).maybeSingle();
     if (!targetUser) {
         showNotification("指定されたIDのユーザーが見つかりません");
         return;
     }
 
+    // 既に登録済みかチェック
     const { data: existing } = await supabaseClient.from('friends')
         .select('id')
-        .or(`and(sender_uid.eq.${myUser.googleId},receiver_uid.eq.${targetUser.id}),and(sender_uid.eq.${targetUser.id},receiver_uid.eq.${myUser.googleId})`);
+        .eq('sender_uid', myUser.googleId)
+        .eq('receiver_uid', targetUser.id);
 
     if (existing && existing.length > 0) {
-        showNotification("既にフレンドであるか、申請手続きが進行中です");
+        showNotification("この相手のIDは既に登録済みです");
         return;
     }
 
+    // 登録実行（即座インサート）
     await supabaseClient.from('friends').insert([{ sender_uid: myUser.googleId, receiver_uid: targetUser.id, status: 'pending' }]);
-    showNotification(`@${targetIdInput} へフレンド申請を送りました！`);
+    
+    // 相手がすでに自分を登録しているか（相互か）確認
+    const { data: checkMutual } = await supabaseClient.from('friends')
+        .select('id')
+        .eq('sender_uid', targetUser.id)
+        .eq('receiver_uid', myUser.googleId);
+
+    if (checkMutual && checkMutual.length > 0) {
+        showNotification(`🎉 ${targetUser.name} と相互フレンドになりました！トークが可能です。`);
+    } else {
+        showNotification(`@${targetIdInput} を登録しました。相手側からも登録されるとトークが始まります。`);
+    }
+
     document.getElementById('modal-add').classList.add('hidden');
     document.getElementById('friend-id-input').value = '';
+    loadFriendSystemData();
 });
 
-document.getElementById('simulate-scan-btn').addEventListener('click', () => {
-    const scanId = document.getElementById('qr-scan-simulate').value.trim();
-    if(!scanId) return;
-    document.getElementById('friend-id-input').value = scanId;
-    document.getElementById('type-friend-btn').click();
-    document.getElementById('qr-scan-simulate').value = '';
-});
-
-async function acceptRequest(requestId) {
-    await supabaseClient.from('friends').update({ status: 'accepted' }).eq('id', requestId);
-    showNotification("フレンド申請を承認しました！");
-    loadFriendSystemData();
-}
-
-async function rejectRequest(requestId) {
-    await supabaseClient.from('friends').delete().eq('id', requestId);
-    showNotification("フレンド申請をお断りしました");
-    loadFriendSystemData();
-}
-
-function renderFriendRequests() {
-    const list = document.getElementById('friend-requests-list');
-    list.innerHTML = '';
-    if (activeRequestsList.length === 0) {
-        list.innerHTML = '<li style="padding:10px; font-size:12px; color:#aaa; text-align:center;">届いている申請はありません</li>';
-        return;
-    }
-    activeRequestsList.forEach(req => {
-        const li = document.createElement('li');
-        li.className = 'list-item';
-        li.style.cursor = 'default';
-        li.innerHTML = `
-            <img src="${req.sender.avatar || DEFAULT_AVATAR}" class="avatar">
-            <div class="item-info">
-                <div class="item-title">${req.sender.name}</div>
-                <div class="item-sub">ID: ${req.sender.user_id}</div>
-            </div>
-            <div style="display:flex; gap:5px; z-index: 10;">
-                <button class="btn-small btn-accept-action">承認</button>
-                <button class="btn-small btn-reject-action" style="background:#ff4d4f;">拒否</button>
-            </div>
-        `;
-        // 動的なイベント割り当てでインライン起因の不具合を防止
-        li.querySelector('.btn-accept-action').addEventListener('click', () => acceptRequest(req.id));
-        li.querySelector('.btn-reject-action').addEventListener('click', () => rejectRequest(req.id));
-        list.appendChild(li);
-    });
-}
-
-function renderFriends() {
-    const list = document.getElementById('friend-list'); list.innerHTML = '';
-    const sectionTitle = document.querySelector('.friend-list-section h4');
-    if(sectionTitle) sectionTitle.innerText = `フレンド (${activeFriendsList.length}人)`;
-
-    if (activeFriendsList.length === 0) {
-        list.innerHTML = '<li style="padding:10px; font-size:12px; color:#aaa; text-align:center;">フレンドはいません</li>';
-        return;
-    }
-    activeFriendsList.forEach(f => {
-        const li = document.createElement('li'); li.className = 'list-item';
-        li.onclick = () => { 
-            const pair = [myUser.googleId, f.id].sort(); 
-            registerChatRoom(`chat_${pair[0]}_${pair[1]}`, f.name, false, f.avatar || DEFAULT_AVATAR);
-            openChatRoom(`chat_${pair[0]}_${pair[1]}`); 
-        };
-        li.innerHTML = `<img src="${f.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${f.name}</div><div class="item-sub">ID: ${f.user_id}</div></div>`;
-        list.appendChild(li);
-    });
-}
-
-document.getElementById('add-btn').addEventListener('click', () => {
-    document.getElementById('modal-add').classList.remove('hidden');
-    document.getElementById('type-friend-btn').click();
+// チャットリストのレンダリング ＋ 【新機能: フレンドのリアルタイム検索・絞り込み表示】
+function updateChatListUI(filterQuery = "") {
+    const list = document.getElementById('chat-list'); 
+    list.innerHTML = ''; 
+    let totalUnread = 0;
     
-    const qrContainer = document.getElementById('my-qrcode-container');
-    qrContainer.innerHTML = '';
-    if(myUser && typeof QRCode !== 'undefined') {
-        new QRCode(qrContainer, { text: myUser.user_id, width: 140, height: 140 });
-    }
-});
+    const query = filterQuery.toLowerCase().trim();
 
-document.getElementById('type-friend-btn').addEventListener('click', (e) => activateAddTab('form-add-friend', e.target));
-document.getElementById('type-qr-btn').addEventListener('click', (e) => activateAddTab('form-qr-friend', e.target));
-document.getElementById('type-group-btn').addEventListener('click', (e) => {
-    activateAddTab('form-add-group', e.target);
-    const container = document.getElementById('group-member-select');
-    container.innerHTML = activeFriendsList.map(f => `<label style="display:block; margin:4px 0;"><input type="checkbox" value="${f.id}"> ${f.name}</label>`).join('');
-});
+    Object.keys(chats).forEach(roomId => {
+        const room = chats[roomId];
+        
+        // 検索クエリがある場合、名前が不一致ならスキップ（絞り込み検索）
+        if (query && !room.name.toLowerCase().includes(query)) {
+            return;
+        }
 
-function activateAddTab(formId, targetBtn) {
-    document.querySelectorAll('.add-type-selector button').forEach(b => b.classList.remove('active'));
-    targetBtn.classList.add('active');
-    document.getElementById('form-add-friend').classList.add('hidden');
-    document.getElementById('form-qr-friend').classList.add('hidden');
-    document.getElementById('form-add-group').classList.add('hidden');
-    document.getElementById(formId).classList.remove('hidden');
-}
-
-document.getElementById('create-group-submit').addEventListener('click', () => {
-    const groupName = document.getElementById('group-name-input').value.trim();
-    if (!groupName) return;
-    const checkboxes = document.querySelectorAll('#group-member-select input[type="checkbox"]:checked');
-    const selectedMembers = [myUser.googleId]; checkboxes.forEach(cb => selectedMembers.push(cb.value));
-    const roomId = `group_${Date.now()}`;
-    registerChatRoom(roomId, groupName, true, `https://api.dicebear.com/7.x/identicon/svg?seed=${groupName}`, "", selectedMembers);
-    showNotification(`グループ「${groupName}」を作成しました`);
-    document.getElementById('modal-add').classList.add('hidden');
-});
-
-function setupFileInputListeners() {
-    const pairs = [['edit-avatar-file', 'edit-avatar-name'], ['edit-profile-bg-file', 'edit-bg-name'], ['custom-stamp-file', 'stamp-file-name']];
-    pairs.forEach(([inputId, nameId]) => {
-        const el = document.getElementById(inputId); const nameEl = document.getElementById(nameId);
-        if (el && nameEl) el.addEventListener('change', (e) => { nameEl.innerText = e.target.files.length > 0 ? e.target.files[0].name : "未選択"; });
+        totalUnread += room.unread;
+        const li = document.createElement('li'); 
+        li.className = 'list-item';
+        li.onclick = () => openChatRoom(roomId);
+        li.innerHTML = `<img src="${room.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'フレンド'}</div></div>`;
+        list.appendChild(li);
     });
-}
-
-document.getElementById('edit-profile-trigger').addEventListener('click', () => {
-    document.getElementById('edit-name-input').value = myUser.name;
-    document.getElementById('modal-profile').classList.remove('hidden');
-});
-
-document.getElementById('save-profile-btn').addEventListener('click', async () => {
-    const newName = document.getElementById('edit-name-input').value.trim();
-    const fileInput = document.getElementById('edit-avatar-file');
-    const bgFileInput = document.getElementById('edit-profile-bg-file');
-    if (newName) myUser.name = newName;
-    if (fileInput.files.length > 0) { myUser.avatar = await resizeImage(await readFileAsBase64(fileInput.files[0]), 150, 150); }
-    if (bgFileInput.files.length > 0) {
-        myUser.profileBg = await resizeImage(await readFileAsBase64(bgFileInput.files[0]), 400, 250);
-        document.getElementById('my-profile-bg').style.backgroundImage = `url(${myUser.profileBg})`;
+    
+    const totalBadge = document.getElementById('total-unread'); 
+    if(totalBadge) {
+        totalBadge.innerText = totalUnread;
+        totalBadge.classList.toggle('hidden', totalUnread === 0);
     }
-    saveData();
-    document.getElementById('my-name-display').innerText = myUser.name;
-    document.getElementById('my-avatar').src = myUser.avatar;
-    document.getElementById('modal-profile').classList.add('hidden');
-    showNotification("プロフィールを更新しました");
-});
-
-document.getElementById('story-btn').addEventListener('click', () => { document.getElementById('modal-story').classList.remove('hidden'); renderStories(); });
-document.getElementById('post-story-file').addEventListener('change', async (e) => {
-    if (e.target.files.length > 0) {
-        stories.push({ username: myUser.name, avatar: myUser.avatar, image: await resizeImage(await readFileAsBase64(e.target.files[0]), 300, 400), timestamp: Date.now() });
-        saveData(); renderStories(); e.target.value = '';
-    }
-});
-function renderStories() {
-    const area = document.getElementById('story-display-area'); const now = Date.now();
-    stories = stories.filter(s => (now - s.timestamp) < 86400000); saveData();
-    if (stories.length === 0) { area.innerHTML = `<p style="color:#aaa;">投稿はありません</p>`; return; }
-    area.innerHTML = stories.map(s => `<div class="story-item"><div class="story-user"><img src="${s.avatar || DEFAULT_AVATAR}" class="msg-avatar"><span>${s.username}</span></div><img src="${s.image}" class="story-img"></div>`).join('');
 }
-
-document.getElementById('logout-btn').addEventListener('click', () => {
-    endCallState(); 
-    if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
-    if (friendRealtimeChannel) { supabaseClient.removeChannel(friendRealtimeChannel); friendRealtimeChannel = null; }
-    document.getElementById('main-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('hidden');
-});
-document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
-document.querySelectorAll('.closeModal').forEach(btn => { btn.addEventListener('click', (e) => { e.target.closest('.modal').classList.add('hidden'); }); });
-
-document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        btn.classList.add('active'); document.getElementById(btn.dataset.tab).classList.add('active');
-        document.getElementById('header-title').innerText = btn.dataset.tab === 'tab-chats' ? 'トーク' : 'フレンド';
-        if(btn.dataset.tab === 'tab-friends') loadFriendSystemData();
-    });
-});
 
 function registerChatRoom(roomId, name, isGroup, avatar, bgImage = "", members = []) {
     if (chats[roomId]) return; chats[roomId] = { name, isGroup, unread: 0, avatar: avatar || DEFAULT_AVATAR, bgImage, members }; saveData();
@@ -572,19 +411,6 @@ async function openChatRoom(roomId) {
         .subscribe();
 }
 
-function updateChatListUI() {
-    const list = document.getElementById('chat-list'); list.innerHTML = ''; let totalUnread = 0;
-    Object.keys(chats).forEach(roomId => {
-        const room = chats[roomId]; totalUnread += room.unread;
-        const li = document.createElement('li'); li.className = 'list-item';
-        li.onclick = () => openChatRoom(roomId);
-        li.innerHTML = `<img src="${room.avatar || DEFAULT_AVATAR}" class="avatar"><div class="item-info"><div class="item-title">${room.name}</div><div class="item-sub">${room.isGroup ? 'グループ':'1対1'}</div></div>`;
-        list.appendChild(li);
-    });
-    const totalBadge = document.getElementById('total-unread'); totalBadge.innerText = totalUnread;
-    totalBadge.classList.toggle('hidden', totalUnread === 0);
-}
-
 document.getElementById('back-btn').addEventListener('click', async () => {
     endCallState(); if (currentSubscription) { await supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
     activeChatId = null; document.getElementById('chat-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden');
@@ -615,7 +441,17 @@ document.getElementById('change-bg-file').addEventListener('change', async (e) =
         document.getElementById('modal-chat-menu').classList.add('hidden');
     }
 });
-document.getElementById('delete-friend-btn').addEventListener('click', () => { delete chats[activeChatId]; saveData(); updateChatListUI(); document.getElementById('back-btn').click(); document.getElementById('modal-chat-menu').classList.add('hidden'); });
+document.getElementById('delete-friend-btn').addEventListener('click', async () => {
+    // 登録データをデータベースから削除してフレンド関係を解消
+    if (activeChatId) {
+        const room = chats[activeChatId];
+        const targetFriend = activeFriendsList.find(f => f.name === room.name);
+        if(targetFriend) {
+            await supabaseClient.from('friends').delete().eq('sender_uid', myUser.googleId).eq('receiver_uid', targetFriend.id);
+        }
+    }
+    delete chats[activeChatId]; saveData(); loadFriendSystemData(); document.getElementById('back-btn').click(); document.getElementById('modal-chat-menu').classList.add('hidden');
+});
 
 document.getElementById('stamp-toggle-btn').addEventListener('click', () => { document.getElementById('stamp-picker').classList.toggle('hidden'); document.getElementById('attachment-menu').classList.add('hidden'); renderStamps(); });
 function renderStamps() { document.getElementById('stamp-list').innerHTML = stamps.map(s => `<img src="${s}" class="stamp-item" onclick="sendStamp('${s}')">`).join(''); }
@@ -685,6 +521,7 @@ function setupAdvancedFeatures() {
         charCounter.style.color = len >= 500 ? '#ff4d4f' : '#888';
     });
 
+    // トークルーム内のメッセージ検索
     document.getElementById('chat-search-input').addEventListener('input', (e) => {
         const query = e.target.value.toLowerCase().trim();
         const groups = document.querySelectorAll('.message-group');
@@ -695,6 +532,11 @@ function setupAdvancedFeatures() {
                 group.style.display = text.includes(query) ? 'flex' : 'none';
             }
         });
+    });
+
+    // 【新規機能】メイン画面のフレンドリアルタイム検索入力監視
+    document.getElementById('friend-search-input').addEventListener('input', (e) => {
+        updateChatListUI(e.target.value);
     });
 
     document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
@@ -821,3 +663,29 @@ function showCallModal(m) {
     document.getElementById('accept-call-btn').classList.toggle('hidden', m !== 'incoming'); 
     modal.classList.remove('hidden');
 }
+
+document.getElementById('add-btn').addEventListener('click', () => {
+    document.getElementById('modal-add').classList.remove('hidden');
+});
+document.getElementById('story-btn').addEventListener('click', () => { document.getElementById('modal-story').classList.remove('hidden'); renderStories(); });
+document.getElementById('post-story-file').addEventListener('change', async (e) => {
+    if (e.target.files.length > 0) {
+        stories.push({ username: myUser.name, avatar: myUser.avatar, image: await resizeImage(await readFileAsBase64(e.target.files[0]), 300, 400), timestamp: Date.now() });
+        saveData(); renderStories(); e.target.value = '';
+    }
+});
+function renderStories() {
+    const area = document.getElementById('story-display-area'); const now = Date.now();
+    stories = stories.filter(s => (now - s.timestamp) < 86400000); saveData();
+    if (stories.length === 0) { area.innerHTML = `<p style="color:#aaa;">投稿はありません</p>`; return; }
+    area.innerHTML = stories.map(s => `<div class="story-item"><div class="story-user"><img src="${s.avatar || DEFAULT_AVATAR}" class="msg-avatar"><span>${s.username}</span></div><img src="${s.image}" class="story-img"></div>`).join('');
+}
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+    endCallState(); 
+    if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    if (friendRealtimeChannel) { supabaseClient.removeChannel(friendRealtimeChannel); friendRealtimeChannel = null; }
+    document.getElementById('main-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('hidden');
+});
+document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
+document.querySelectorAll('.closeModal').forEach(btn => { btn.addEventListener('click', (e) => { e.target.closest('.modal').classList.add('hidden'); }); });
