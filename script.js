@@ -21,12 +21,12 @@ let pendingFriendsList = []; // 一方的に登録しているフレンドリス
 
 const DEFAULT_GROUP_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50' viewBox='0 0 50 50'><rect width='100%25' height='100%25' fill='%2334C759'/><text x='50%25' y='55%25' font-family='sans-serif' font-size='20' fill='%23ffffff' text-anchor='middle'>👥</text></svg>";
 
-// ★50種類の猫スタンプ（黒猫25種＋モフ白猫25種）を生成する関数
+// ★50種類の超かわいい猫スタンプ（黒猫25種＋モフ白猫25種）を生成する関数 (多彩なレイアウト・かわいい表情)
 function generate50CatStamps() {
     const blackCatTexts = [
         "ごめん...", "え!?", "ありがとう", "おつかれ！", "了解！",
         "すやすや", "なるほど", "！？", "おはよ", "おやすみ",
-        "？？？", "いいね！", "❤️", "チラッ", "またね",
+        "？？？", "いいね！", "❤️すき", "チラッ", "またね",
         "がんばれ", "しょんぼり", "ぺこり", "えっ", "まかせろ",
         "うれしい", "はてな", "わーい", "涙...", "OK!"
     ];
@@ -41,46 +41,106 @@ function generate50CatStamps() {
 
     const catStamps = [];
 
-    // 黒猫 25種
+    // 黒猫 25種 (かわいさUP & バリエーション豊か)
     blackCatTexts.forEach((text, i) => {
-        const eyeBg = (i % 5 === 0) ? '#ffcc00' : (i % 3 === 0 ? '#66ccff' : '#a3e635');
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>` +
-            `<path d='M25 42 L20 15 L45 30 Z' fill='%23222222'/>` +
-            `<path d='M75 42 L80 15 L55 30 Z' fill='%23222222'/>` +
-            `<circle cx='50' cy='52' r='32' fill='%23222222'/>` +
-            `<circle cx='38' cy='46' r='6' fill='${encodeURIComponent(eyeBg)}'/>` +
-            `<circle cx='62' cy='46' r='6' fill='${encodeURIComponent(eyeBg)}'/>` +
-            `<circle cx='38' cy='46' r='2' fill='%23000'/>` +
-            `<circle cx='62' cy='46' r='2' fill='%23000'/>` +
-            `<ellipse cx='50' cy='55' rx='3' ry='2' fill='%23ff9999'/>` +
-            `<path d='M46 59 Q50 64 54 59' stroke='%23ffffff' stroke-width='2' fill='none'/>` +
-            `<rect x='5' y='68' width='90' height='26' rx='8' fill='%23ffffff' stroke='%23333333' stroke-width='2'/>` +
-            `<text x='50' y='86' font-family='sans-serif' font-size='13' font-weight='bold' fill='%23111111' text-anchor='middle'>${encodeURIComponent(text)}</text>` +
-            `</svg>`;
+        const eyeBg = (i % 4 === 0) ? '#38bdf8' : (i % 3 === 0 ? '#facc15' : '#4ade80');
+        const layoutType = i % 5;
+
+        let eyesPart = `<circle cx='36' cy='46' r='7' fill='${encodeURIComponent(eyeBg)}'/><circle cx='64' cy='46' r='7' fill='${encodeURIComponent(eyeBg)}'/><circle cx='34' cy='44' r='2.5' fill='%23fff'/><circle cx='62' cy='44' r='2.5' fill='%23fff'/><circle cx='38' cy='47' r='1.2' fill='%23fff'/><circle cx='66' cy='47' r='1.2' fill='%23fff'/>`;
+        
+        if (i % 5 === 1) {
+            eyesPart = `<circle cx='36' cy='46' r='7' fill='${encodeURIComponent(eyeBg)}'/><circle cx='34' cy='44' r='2.5' fill='%23fff'/><path d='M58 46 Q64 40 70 46' stroke='${encodeURIComponent(eyeBg)}' stroke-width='3' fill='none' stroke-linecap='round'/>`;
+        } else if (i % 5 === 2) {
+            eyesPart = `<ellipse cx='36' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeBg)}'/><ellipse cx='64' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeBg)}'/><circle cx='33' cy='43' r='3.5' fill='%23fff'/><circle cx='61' cy='43' r='3.5' fill='%23fff'/><circle cx='38' cy='49' r='2' fill='%23fff'/><circle cx='66' cy='49' r='2' fill='%23fff'/>`;
+        } else if (i % 5 === 3) {
+            eyesPart = `<path d='M30 46 C30 40 36 40 36 45 C36 40 42 40 42 46 C42 50 36 54 36 55 C36 54 30 50 30 46 Z' fill='%23ff4d4f'/><path d='M58 46 C58 40 64 40 64 45 C64 40 70 40 70 46 C70 50 64 54 64 55 C64 54 58 50 58 46 Z' fill='%23ff4d4f'/>`;
+        } else if (i % 5 === 4) {
+            eyesPart = `<path d='M30 48 Q36 54 42 48' stroke='%23ffffff' stroke-width='3' fill='none'/><path d='M58 48 Q64 54 70 48' stroke='%23ffffff' stroke-width='3' fill='none'/>`;
+        }
+
+        let catBody = `<g>` +
+            `<path d='M22 40 C15 12 40 22 45 32 Z' fill='%23262626'/><path d='M26 36 C22 18 38 24 42 30 Z' fill='%23ffb6c1'/>` +
+            `<path d='M78 40 C85 12 60 22 55 32 Z' fill='%23262626'/><path d='M74 36 C78 18 62 24 58 30 Z' fill='%23ffb6c1'/>` +
+            `<circle cx='50' cy='52' r='34' fill='%23262626'/>` +
+            `<ellipse cx='26' cy='56' rx='6' ry='4' fill='%23ff99aa' opacity='0.7'/>` +
+            `<ellipse cx='74' cy='56' rx='6' ry='4' fill='%23ff99aa' opacity='0.7'/>` +
+            eyesPart +
+            `<ellipse cx='50' cy='54' rx='2.5' ry='1.8' fill='%23ff9999'/>` +
+            `<path d='M44 58 Q50 64 56 58' stroke='%23ffffff' stroke-width='2.5' fill='none' stroke-linecap='round'/>` +
+            `<path d='M12 50 L26 53 M10 57 L26 57' stroke='%23555555' stroke-width='1.5'/>` +
+            `<path d='M88 50 L74 53 M90 57 L74 57' stroke='%23555555' stroke-width='1.5'/>` +
+            `</g>`;
+
+        let textDecoration = '';
+        if (layoutType === 0) {
+            textDecoration = `<path d='M10 18 Q10 8 25 8 L75 8 Q90 8 90 18 Q90 28 75 28 L35 28 L20 36 L25 28 Q10 28 10 18 Z' fill='%23ffffff' stroke='%23ff6699' stroke-width='2.5'/>` +
+                `<text x='50' y='21' font-family='sans-serif' font-size='12' font-weight='bold' fill='%23ff3366' text-anchor='middle'>${encodeURIComponent(text)}</text>`;
+        } else if (layoutType === 1) {
+            textDecoration = `<text x='50' y='20' font-family='sans-serif' font-size='14' font-weight='bold' fill='%23facc15' stroke='%23000000' stroke-width='1' text-anchor='middle'>✨ ${encodeURIComponent(text)} ✨</text>`;
+        } else if (layoutType === 2) {
+            textDecoration = `<rect x='10' y='72' width='80' height='24' rx='12' fill='%23ff4d4f' stroke='%23ffffff' stroke-width='2'/>` +
+                `<text x='50' y='88' font-family='sans-serif' font-size='12' font-weight='bold' fill='%23ffffff' text-anchor='middle'>❤️ ${encodeURIComponent(text)}</text>`;
+        } else if (layoutType === 3) {
+            textDecoration = `<rect x='6' y='70' width='88' height='26' rx='8' fill='%2338bdf8' stroke='%23ffffff' stroke-width='2'/>` +
+                `<circle cx='18' cy='83' r='4' fill='%23fff'/><circle cx='14' cy='78' r='1.5' fill='%23fff'/><circle cx='18' cy='76' r='1.5' fill='%23fff'/><circle cx='22' cy='78' r='1.5' fill='%23fff'/>` +
+                `<text x='54' y='87' font-family='sans-serif' font-size='12' font-weight='bold' fill='%23ffffff' text-anchor='middle'>${encodeURIComponent(text)}</text>`;
+        } else {
+            textDecoration = `<g transform='rotate(-5 50 82)'>` +
+                `<rect x='8' y='70' width='84' height='25' rx='6' fill='%23f43f5e' stroke='%23fff' stroke-width='2'/>` +
+                `<text x='50' y='87' font-family='sans-serif' font-size='13' font-weight='900' fill='%23ffffff' text-anchor='middle'>${encodeURIComponent(text)}</text>` +
+                `</g>`;
+        }
+
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>${catBody}${textDecoration}</svg>`;
         catStamps.push(`data:image/svg+xml;utf8,${svg}`);
     });
 
-    // モフモフ白猫 25種
+    // モフモフ白猫 25種 (かわいさUP & 多彩なレイアウト)
     whiteCatTexts.forEach((text, i) => {
-        const eyeColor = (i % 4 === 0) ? '#3b82f6' : (i % 2 === 0 ? '#10b981' : '#f59e0b');
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>` +
-            `<path d='M22 40 L15 10 L42 25 Z' fill='%23fefefe' stroke='%23e2e8f0' stroke-width='2'/>` +
-            `<path d='M26 36 L21 16 L40 25 Z' fill='%23ffb6c1'/>` +
-            `<path d='M78 40 L85 10 L58 25 Z' fill='%23fefefe' stroke='%23e2e8f0' stroke-width='2'/>` +
-            `<path d='M74 36 L79 16 L60 25 Z' fill='%23ffb6c1'/>` +
+        const eyeColor = (i % 4 === 0) ? '#38bdf8' : (i % 2 === 0 ? '#34d399' : '#fbbf24');
+        const layoutType = (i + 2) % 5;
+
+        let eyesPart = `<ellipse cx='34' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeColor)}'/><ellipse cx='66' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeColor)}'/><circle cx='32' cy='43' r='3' fill='%23fff'/><circle cx='64' cy='43' r='3' fill='%23fff'/><circle cx='36' cy='48' r='1.5' fill='%23fff'/><circle cx='68' cy='48' r='1.5' fill='%23fff'/>`;
+        
+        if (i % 4 === 1) {
+            eyesPart = `<ellipse cx='34' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeColor)}'/><ellipse cx='66' cy='46' rx='7' ry='8' fill='${encodeURIComponent(eyeColor)}'/><path d='M34 40 L36 46 L34 52 L32 46 Z' fill='%23fff'/><path d='M66 40 L68 46 L66 52 L64 46 Z' fill='%23fff'/>`;
+        } else if (i % 4 === 2) {
+            eyesPart = `<path d='M27 46 Q34 38 41 46' stroke='${encodeURIComponent(eyeColor)}' stroke-width='3' fill='none' stroke-linecap='round'/><path d='M59 46 Q66 38 73 46' stroke='${encodeURIComponent(eyeColor)}' stroke-width='3' fill='none' stroke-linecap='round'/>`;
+        }
+
+        let catBody = `<g>` +
+            `<path d='M22 40 L12 8 L42 24 Z' fill='%23ffffff' stroke='%23e2e8f0' stroke-width='2'/>` +
+            `<path d='M26 36 L17 14 L40 24 Z' fill='%23ffccd5'/>` +
+            `<path d='M78 40 L88 8 L58 24 Z' fill='%23ffffff' stroke='%23e2e8f0' stroke-width='2'/>` +
+            `<path d='M74 36 L83 14 L60 24 Z' fill='%23ffccd5'/>` +
             `<circle cx='50' cy='50' r='35' fill='%23ffffff' stroke='%23cbd5e1' stroke-width='2'/>` +
-            `<circle cx='20' cy='52' r='10' fill='%23ffffff'/>` +
-            `<circle cx='80' cy='52' r='10' fill='%23ffffff'/>` +
-            `<ellipse cx='34' cy='46' rx='6' ry='8' fill='${encodeURIComponent(eyeColor)}'/>` +
-            `<ellipse cx='66' cy='46' rx='6' ry='8' fill='${encodeURIComponent(eyeColor)}'/>` +
-            `<circle cx='33' cy='44' r='2' fill='%23fff'/>` +
-            `<circle cx='65' cy='44' r='2' fill='%23fff'/>` +
-            `<ellipse cx='30' cy='54' rx='5' ry='3' fill='%23ffb6c1' opacity='0.7'/>` +
-            `<ellipse cx='70' cy='54' rx='5' ry='3' fill='%23ffb6c1' opacity='0.7'/>` +
-            `<ellipse cx='50' cy='53' rx='2.5' ry='1.5' fill='%23ff9999'/>` +
-            `<rect x='5' y='68' width='90' height='26' rx='8' fill='%23ffffff' stroke='%2338bdf8' stroke-width='2'/>` +
-            `<text x='50' y='86' font-family='sans-serif' font-size='13' font-weight='bold' fill='%230f172a' text-anchor='middle'>${encodeURIComponent(text)}</text>` +
-            `</svg>`;
+            `<circle cx='18' cy='52' r='10' fill='%23ffffff'/>` +
+            `<circle cx='82' cy='52' r='10' fill='%23ffffff'/>` +
+            eyesPart +
+            `<ellipse cx='28' cy='54' rx='6' ry='4' fill='%23ffb6c1' opacity='0.8'/>` +
+            `<ellipse cx='72' cy='54' rx='6' ry='4' fill='%23ffb6c1' opacity='0.8'/>` +
+            `<ellipse cx='50' cy='53' rx='2.5' ry='1.6' fill='%23ff80aa'/>` +
+            `<path d='M44 57 Q50 62 56 57' stroke='%2364748b' stroke-width='2' fill='none' stroke-linecap='round'/>` +
+            `</g>`;
+
+        let textDecoration = '';
+        if (layoutType === 0) {
+            textDecoration = `<path d='M15 15 Q25 5 45 12 Q65 5 80 15 Q90 25 80 32 Q65 38 45 32 Q25 38 15 28 Z' fill='%23ffffff' stroke='%23a855f7' stroke-width='2'/>` +
+                `<text x='48' y='24' font-family='sans-serif' font-size='12' font-weight='bold' fill='%239333ea' text-anchor='middle'>${encodeURIComponent(text)}</text>`;
+        } else if (layoutType === 1) {
+            textDecoration = `<rect x='10' y='72' width='80' height='24' rx='8' fill='%23ec4899' stroke='%23fff' stroke-width='2'/>` +
+                `<text x='50' y='88' font-family='sans-serif' font-size='12' font-weight='bold' fill='%23ffffff' text-anchor='middle'>🎀 ${encodeURIComponent(text)}</text>`;
+        } else if (layoutType === 2) {
+            textDecoration = `<rect x='6' y='70' width='88' height='26' rx='13' fill='%2310b981' stroke='%23ffffff' stroke-width='2'/>` +
+                `<text x='50' y='87' font-family='sans-serif' font-size='13' font-weight='bold' fill='%23ffffff' text-anchor='middle'>🍀 ${encodeURIComponent(text)}</text>`;
+        } else if (layoutType === 3) {
+            textDecoration = `<rect x='8' y='68' width='84' height='26' rx='10' fill='%238b5cf6' stroke='%23fff' stroke-width='2'/>` +
+                `<text x='50' y='85' font-family='sans-serif' font-size='13' font-weight='bold' fill='%23ffffff' text-anchor='middle'>★ ${encodeURIComponent(text)} ★</text>`;
+        } else {
+            textDecoration = `<text x='50' y='22' font-family='sans-serif' font-size='14' font-weight='bold' fill='%2306b6d4' stroke='%23fff' stroke-width='1.5' text-anchor='middle'>🎵 ${encodeURIComponent(text)}</text>`;
+        }
+
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>${catBody}${textDecoration}</svg>`;
         catStamps.push(`data:image/svg+xml;utf8,${svg}`);
     });
 
@@ -716,12 +776,46 @@ document.getElementById('stamp-toggle-btn').addEventListener('click', () => {
     renderStamps();
 });
 
-function renderStamps() {
+let currentStampPackId = 'all';
+
+function renderStamps(packId = currentStampPackId) {
+    currentStampPackId = packId;
     const list = document.getElementById('stamp-list');
+    const tabContainer = document.getElementById('stamp-pack-tabs');
     if (!list) return;
+
+    if (tabContainer) {
+        tabContainer.innerHTML = '';
+        
+        const allTab = document.createElement('button');
+        allTab.className = `btn-small ${currentStampPackId === 'all' ? 'btn-primary' : 'btn-secondary'}`;
+        allTab.style.whiteSpace = 'nowrap';
+        allTab.style.fontSize = '11px';
+        allTab.innerText = 'すべて';
+        allTab.onclick = () => renderStamps('all');
+        tabContainer.appendChild(allTab);
+
+        stampPacks.forEach(pack => {
+            const packTab = document.createElement('button');
+            packTab.className = `btn-small ${currentStampPackId === pack.id ? 'btn-primary' : 'btn-secondary'}`;
+            packTab.style.whiteSpace = 'nowrap';
+            packTab.style.fontSize = '11px';
+            packTab.innerText = pack.name;
+            packTab.onclick = () => renderStamps(pack.id);
+            tabContainer.appendChild(packTab);
+        });
+    }
+
+    let displayStamps = [];
+    if (currentStampPackId === 'all') {
+        displayStamps = stamps;
+    } else {
+        const foundPack = stampPacks.find(p => p.id === currentStampPackId);
+        displayStamps = foundPack ? (foundPack.stamps || []) : stamps;
+    }
+
     list.innerHTML = '';
-    
-    stamps.forEach(s => {
+    displayStamps.forEach(s => {
         const img = document.createElement('img');
         img.src = s;
         img.className = 'stamp-item';
@@ -1334,6 +1428,13 @@ function initStampFeatures() {
     if (savePackPubBtn) {
         savePackPubBtn.addEventListener('click', () => savePackInternal(true));
     }
+
+    const publicSearchInput = document.getElementById('public-stamp-search-input');
+    if (publicSearchInput) {
+        publicSearchInput.addEventListener('input', (e) => {
+            renderPublicStampPacks(e.target.value);
+        });
+    }
 }
 
 function renderMyStampPacks() {
@@ -1386,10 +1487,9 @@ function renderMyStampPacks() {
     });
 }
 
-async function renderPublicStampPacks() {
+async function renderPublicStampPacks(query = "") {
     const list = document.getElementById('public-stamp-packs-list');
     if (!list) return;
-    list.innerHTML = '<p style="color:#888; font-size:12px;">読み込み中...</p>';
 
     let publicPacks = [];
     try {
@@ -1410,8 +1510,17 @@ async function renderPublicStampPacks() {
         if (!publicPacks.some(pub => pub.name === p.name)) publicPacks.push(p);
     });
 
+    const q = (query || "").toLowerCase().trim();
+    if (q) {
+        publicPacks = publicPacks.filter(p => 
+            (p.name || "").toLowerCase().includes(q) ||
+            (p.description || "").toLowerCase().includes(q) ||
+            (p.authorName || "").toLowerCase().includes(q)
+        );
+    }
+
     if (publicPacks.length === 0) {
-        list.innerHTML = '<p style="color:#aaa; font-size:12px;">公開されているスタンプはありません</p>';
+        list.innerHTML = `<p style="color:#aaa; font-size:12px;">${q ? '該当するスタンプが見つかりません' : '公開されているスタンプはありません'}</p>`;
         return;
     }
 
