@@ -88,14 +88,13 @@ function showNotification(msg) {
 function applySettingsUI() {
     document.body.style.fontFamily = appSettings.font;
     
-    // テーマ変更の適用
+    // ダークテーマの切り替え適用
     if (appSettings.theme === 'dark') {
         document.getElementById('app-container').classList.add('dark-theme');
     } else {
         document.getElementById('app-container').classList.remove('dark-theme');
     }
     
-    // セレクトボックスの同期
     const fontSelect = document.getElementById('font-select');
     if (fontSelect) fontSelect.value = appSettings.font;
     const themeSelect = document.getElementById('theme-select');
@@ -184,7 +183,7 @@ window.onload = function() {
     }
 };
 
-// 【厳密修正】新規登録のエラーとバグを完全に修正
+// 【詳細デバッグ機能付き】新規登録処理
 document.getElementById('save-first-name-btn').addEventListener('click', async () => {
     const inputId = document.getElementById('first-id-input').value.trim();
     const inputName = document.getElementById('first-name-input').value.trim();
@@ -200,29 +199,41 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
 
     if (pendingGoogleUser) {
         try {
-            // 既存IDの重複チェック
+            // 既存ユーザーIDの重複チェック
             const { data: checkIdData, error: checkError } = await supabaseClient
                 .from('users')
                 .select('id')
                 .eq('user_id', inputId);
 
-            if (checkError) throw checkError;
+            if (checkError) {
+                console.error("IDチェック時にエラーが発生:", checkError);
+                alert("ID確認エラーが発生しました:\n" + checkError.message);
+                return;
+            }
 
             if (checkIdData && checkIdData.length > 0) {
                 showNotification("❌ そのIDは既に他のユーザーに使用されています！");
                 return;
             }
 
-            // 被っていなければ upsert 登録を実行
-            const { error: upsertError } = await supabaseClient.from('users').upsert({
-                id: pendingGoogleUser.googleId,
+            const payload = {
+                id: String(pendingGoogleUser.googleId),
                 user_id: inputId,
                 name: inputName,
                 avatar: pendingGoogleUser.avatar || DEFAULT_AVATAR,
                 profile_bg: ""
-            });
+            };
 
-            if (upsertError) throw upsertError;
+            // 登録実行
+            const { error: upsertError } = await supabaseClient
+                .from('users')
+                .upsert(payload);
+
+            if (upsertError) {
+                console.error("Supabaseへの保存処理エラー:", upsertError);
+                alert("登録エラー詳細（テーブル権限や型に不整合があります）:\n" + JSON.stringify(upsertError, null, 2));
+                return;
+            }
 
             myUser = { name: inputName, user_id: inputId, avatar: pendingGoogleUser.avatar || DEFAULT_AVATAR, googleId: pendingGoogleUser.googleId, profileBg: "" };
             document.getElementById('modal-first-name').classList.add('hidden');
@@ -230,9 +241,11 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
             pendingGoogleUser = null;
             completeLogin();
         } catch (err) {
-            console.error(err);
-            showNotification("登録処理中にエラーが発生しました。");
+            console.error("想定外のエラー:", err);
+            alert("例外エラーが発生しました: " + err.message);
         }
+    } else {
+        alert("Googleのログインセッションが見つかりません。画面をリロードしてやり直してください。");
     }
 });
 
@@ -357,7 +370,7 @@ function renderFriendRequests() {
             </div>
             <div style="display:flex; gap:5px;">
                 <button class="btn-small" onclick="acceptRequest(${req.id})">承認</button>
-                <button class="btn-small" style="background:#ff4d4f;" onclick="rejectRequest(${req.id})">拒拒</button>
+                <button class="btn-small" style="background:#ff4d4f;" onclick="rejectRequest(${req.id})">拒否</button>
             </div>
         `;
         list.appendChild(li);
@@ -498,7 +511,6 @@ async function openChatRoom(roomId) {
     chatScreen.style.backgroundImage = room.bgImage ? `url(${room.bgImage})` : 'none';
     document.getElementById('main-screen').classList.add('hidden'); chatScreen.classList.remove('hidden');
 
-    // 検索窓のリセット
     document.getElementById('chat-search-input').value = '';
 
     const { data: pastMessages, error } = await supabaseClient.from('messages').select('*').eq('channel', roomId).order('created_at', { ascending: true });
@@ -612,7 +624,7 @@ function addMessageToScreen(data) {
     wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content); messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// 多機能・高性能化イベント設定
+// 高性能化・多機能化の設定
 function setupAdvancedFeatures() {
     // 15種類のフォント切り替え
     document.getElementById('font-select').addEventListener('change', (e) => {
@@ -632,11 +644,7 @@ function setupAdvancedFeatures() {
     msgInput.addEventListener('input', () => {
         const len = msgInput.value.length;
         charCounter.innerText = `${len} / 500`;
-        if (len >= 500) {
-            charCounter.style.color = '#ff4d4f';
-        } else {
-            charCounter.style.color = '#888';
-        }
+        charCounter.style.color = len >= 500 ? '#ff4d4f' : '#888';
     });
 
     // メッセージ検索機能
@@ -647,23 +655,19 @@ function setupAdvancedFeatures() {
             const bubble = group.querySelector('.bubble');
             if (bubble) {
                 const text = bubble.innerText.toLowerCase();
-                if (text.includes(query)) {
-                    group.style.display = 'flex';
-                } else {
-                    group.style.display = 'none';
-                }
+                group.style.display = text.includes(query) ? 'flex' : 'none';
             }
         });
     });
 
-    // 通話ボタンの割り当て
+    // 通話ボタン割り当て
     document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
     document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
     document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
     document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
 }
 
-// 【バグ修正】通話制御・シグナリングの安定化
+// 【バグ修正済み】WebRTC通話制御
 document.getElementById('call-layout-btn').addEventListener('click', () => {
     const vc = document.getElementById('video-container'); vc.classList.remove(callLayouts[currentLayoutIndex]);
     currentLayoutIndex = (currentLayoutIndex + 1) % callLayouts.length; vc.classList.add(callLayouts[currentLayoutIndex]);
@@ -675,7 +679,7 @@ document.getElementById('call-effect-btn').addEventListener('click', () => {
 
 async function handleCallSignaling(p) {
     const { event, from, to, type, sdp, candidate } = p; 
-    if (to !== myUser.name) return; // 自分宛て以外は無視
+    if (to !== myUser.name) return;
 
     if (event === 'call-offer') {
         if (callSession.active) { 

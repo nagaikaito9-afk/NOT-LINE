@@ -24,7 +24,7 @@ body {
     transition: background 0.3s, color 0.3s;
 }
 
-/* ★多機能化: ダークテーマ用の配色の定義 */
+/* ★多機能化: ダークテーマ設定 */
 #app-container.dark-theme {
     background: #121212;
     color: #e0e0e0;
@@ -131,7 +131,7 @@ header {
 .edit-profile-btn { font-size: 11px; color: #87cefa; cursor: pointer; text-decoration: underline; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 .logout-btn { background: rgba(255,77,79,0.9); border: none; color: white; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
 
-/* フレンド管理セクション */
+/* フレンド管理 */
 .friend-requests-section, .friend-list-section {
     padding: 10px 15px 5px 15px;
 }
@@ -162,7 +162,7 @@ header {
 
 #chat-screen { background-color: #60a5fa; background-size: cover; background-position: center; transition: background 0.3s ease; }
 
-/* 検索バーのスタイリング */
+/* 検索バー */
 #chat-search-container {
     padding: 6px 10px;
     background: #fff;
@@ -210,7 +210,7 @@ header {
 #send-btn { padding: 8px 15px; background-color: #007AFF; color: white; border: none; border-radius: 18px; font-weight: bold; cursor: pointer; }
 .line-action-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #777; padding: 4px; }
 
-/* 文字数表示カウンターのスタイリング */
+/* 文字数カウンター */
 #char-counter {
     text-align: right;
     font-size: 10px;
@@ -275,7 +275,7 @@ header {
 #toast-notification { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px; transition: top 0.3s; z-index: 1000; }
 #toast-notification.show { top: 15px; }
 
-/* 通話モーダル用スタイル */
+/* 通話モーダル */
 .call-modal-content { background: #1e1e1e !important; color: #fff !important; max-width: 360px; padding: 20px; }
 .call-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 #video-container { position: relative; width: 100%; height: 260px; background: #000; border-radius: 8px; overflow: hidden; transition: all 0.3s ease; }
