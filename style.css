@@ -24,7 +24,7 @@ body {
     transition: background 0.3s, color 0.3s;
 }
 
-/* ★多機能化: ダークテーマ設定 */
+/* 多機能化: ダークテーマ設定 */
 #app-container.dark-theme {
     background: #121212;
     color: #e0e0e0;

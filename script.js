@@ -25,6 +25,7 @@ let stamps = JSON.parse(localStorage.getItem('notline_stamps')) || [
 ];
 let activeChatId = null;
 let currentSubscription = null;
+let friendRealtimeChannel = null; // 強化機能: フレンド申請検知用リアルタイムチャンネル
 let pendingGoogleUser = null; 
 
 // WebRTC 用の変数
@@ -88,7 +89,6 @@ function showNotification(msg) {
 function applySettingsUI() {
     document.body.style.fontFamily = appSettings.font;
     
-    // ダークテーマの切り替え適用
     if (appSettings.theme === 'dark') {
         document.getElementById('app-container').classList.add('dark-theme');
     } else {
@@ -183,7 +183,6 @@ window.onload = function() {
     }
 };
 
-// 【詳細デバッグ機能付き】新規登録処理
 document.getElementById('save-first-name-btn').addEventListener('click', async () => {
     const inputId = document.getElementById('first-id-input').value.trim();
     const inputName = document.getElementById('first-name-input').value.trim();
@@ -199,7 +198,6 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
 
     if (pendingGoogleUser) {
         try {
-            // 既存ユーザーIDの重複チェック
             const { data: checkIdData, error: checkError } = await supabaseClient
                 .from('users')
                 .select('id')
@@ -224,14 +222,13 @@ document.getElementById('save-first-name-btn').addEventListener('click', async (
                 profile_bg: ""
             };
 
-            // 登録実行
             const { error: upsertError } = await supabaseClient
                 .from('users')
                 .upsert(payload);
 
             if (upsertError) {
                 console.error("Supabaseへの保存処理エラー:", upsertError);
-                alert("登録エラー詳細（テーブル権限や型に不整合があります）:\n" + JSON.stringify(upsertError, null, 2));
+                alert("登録エラー詳細:\n" + JSON.stringify(upsertError, null, 2));
                 return;
             }
 
@@ -266,6 +263,34 @@ function completeLogin() {
     });
 
     loadFriendSystemData();
+    setupFriendRealtimeSubscription(); // 強化機能: ログイン完了時にフレンドのリアルタイム監視を開始
+}
+
+// 強化機能: 自分宛てのフレンド申請（更新・挿入）をリアルタイムで検知・通知する設定
+function setupFriendRealtimeSubscription() {
+    if (!myUser) return;
+    if (friendRealtimeChannel) supabaseClient.removeChannel(friendRealtimeChannel);
+
+    friendRealtimeChannel = supabaseClient.channel(`public:friends:${myUser.googleId}`);
+    friendRealtimeChannel
+        .on('postgres_changes', { 
+            event: '*', 
+            schema: 'public', 
+            table: 'friends'
+        }, payload => {
+            // 自分に対する処理かを確認
+            if (payload.new && payload.new.receiver_uid === myUser.googleId) {
+                if (payload.eventType === 'INSERT' && payload.new.status === 'pending') {
+                    sendAppNotification("フレンド通知", "新しいフレンド申請が届きました！");
+                }
+                loadFriendSystemData(); // データを再読み込みしてUIとバッジを自動更新
+            }
+            if (payload.new && payload.new.sender_uid === myUser.googleId && payload.new.status === 'accepted') {
+                sendAppNotification("フレンド通知", "フレンド申請が承認されました！");
+                loadFriendSystemData();
+            }
+        })
+        .subscribe();
 }
 
 async function loadFriendSystemData() {
@@ -303,6 +328,18 @@ async function loadFriendSystemData() {
     renderFriends();
     renderFriendRequests();
     updateChatListUI();
+    updateFriendBadgeUI(); // 強化機能: バッジUIの更新を連動
+}
+
+// 強化機能: 未処理のフレンド申請数をナビバッジに反映
+function updateFriendBadgeUI() {
+    const badge = document.getElementById('total-friend-requests');
+    const count = activeRequestsList.length;
+    
+    if (badge) {
+        badge.innerText = count;
+        badge.classList.toggle('hidden', count === 0);
+    }
 }
 
 document.getElementById('add-friend-submit').addEventListener('click', async () => {
@@ -368,11 +405,14 @@ function renderFriendRequests() {
                 <div class="item-title">${req.sender.name}</div>
                 <div class="item-sub">ID: ${req.sender.user_id}</div>
             </div>
-            <div style="display:flex; gap:5px;">
-                <button class="btn-small" onclick="acceptRequest(${req.id})">承認</button>
-                <button class="btn-small" style="background:#ff4d4f;" onclick="rejectRequest(${req.id})">拒否</button>
+            <div style="display:flex; gap:5px; z-index: 10;">
+                <button class="btn-small btn-accept-action">承認</button>
+                <button class="btn-small btn-reject-action" style="background:#ff4d4f;">拒否</button>
             </div>
         `;
+        // 動的なイベント割り当てでインライン起因の不具合を防止
+        li.querySelector('.btn-accept-action').addEventListener('click', () => acceptRequest(req.id));
+        li.querySelector('.btn-reject-action').addEventListener('click', () => rejectRequest(req.id));
         list.appendChild(li);
     });
 }
@@ -482,7 +522,9 @@ function renderStories() {
 }
 
 document.getElementById('logout-btn').addEventListener('click', () => {
-    endCallState(); if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    endCallState(); 
+    if (currentSubscription) { supabaseClient.removeChannel(currentSubscription); currentSubscription = null; }
+    if (friendRealtimeChannel) { supabaseClient.removeChannel(friendRealtimeChannel); friendRealtimeChannel = null; }
     document.getElementById('main-screen').classList.add('hidden'); document.getElementById('login-screen').classList.remove('hidden');
 });
 document.getElementById('settings-btn').addEventListener('click', () => { document.getElementById('modal-settings').classList.remove('hidden'); });
@@ -624,21 +666,17 @@ function addMessageToScreen(data) {
     wrapper.appendChild(timeText); content.appendChild(wrapper); group.appendChild(avatarImg); group.appendChild(content); messagesDiv.appendChild(group); messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// 高性能化・多機能化の設定
 function setupAdvancedFeatures() {
-    // 15種類のフォント切り替え
     document.getElementById('font-select').addEventListener('change', (e) => {
         appSettings.font = e.target.value;
         applySettingsUI();
     });
 
-    // テーマ設定
     document.getElementById('theme-select').addEventListener('change', (e) => {
         appSettings.theme = e.target.value;
         applySettingsUI();
     });
 
-    // 文字数カウンター
     const msgInput = document.getElementById('message-input');
     const charCounter = document.getElementById('char-counter');
     msgInput.addEventListener('input', () => {
@@ -647,7 +685,6 @@ function setupAdvancedFeatures() {
         charCounter.style.color = len >= 500 ? '#ff4d4f' : '#888';
     });
 
-    // メッセージ検索機能
     document.getElementById('chat-search-input').addEventListener('input', (e) => {
         const query = e.target.value.toLowerCase().trim();
         const groups = document.querySelectorAll('.message-group');
@@ -660,14 +697,12 @@ function setupAdvancedFeatures() {
         });
     });
 
-    // 通話ボタン割り当て
     document.getElementById('call-audio-btn').addEventListener('click', () => startCall('audio'));
     document.getElementById('call-video-btn').addEventListener('click', () => startCall('video'));
     document.getElementById('accept-call-btn').addEventListener('click', acceptCall);
     document.getElementById('hangup-call-btn').addEventListener('click', hangupCall);
 }
 
-// 【バグ修正済み】WebRTC通話制御
 document.getElementById('call-layout-btn').addEventListener('click', () => {
     const vc = document.getElementById('video-container'); vc.classList.remove(callLayouts[currentLayoutIndex]);
     currentLayoutIndex = (currentLayoutIndex + 1) % callLayouts.length; vc.classList.add(callLayouts[currentLayoutIndex]);
