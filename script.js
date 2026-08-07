@@ -1322,6 +1322,12 @@ document.getElementById('save-profile-btn').addEventListener('click', async () =
     showNotification("プロフィールを更新しました");
 });
 
+function normalizeForSearch(str) {
+    if (!str) return '';
+    const kata = str.replace(/[\u3041-\u3096]/g, m => String.fromCharCode(m.charCodeAt(0) + 0x60));
+    return kata.toLowerCase().trim();
+}
+
 // ★スタンプ機能拡張（スタンプファイル、ストア、作成、お絵かき）
 function initStampFeatures() {
     const stampMgrBtn = document.getElementById('stamp-manager-btn');
@@ -1336,6 +1342,8 @@ function initStampFeatures() {
     const tabPubBtn = document.getElementById('tab-public-stamps-btn');
     const areaMy = document.getElementById('area-my-stamps');
     const areaPub = document.getElementById('area-public-stamps');
+    const publicSearchInput = document.getElementById('public-stamp-search-input');
+    const clearSearchBtn = document.getElementById('clear-public-search-btn');
 
     if (tabMyBtn && tabPubBtn) {
         tabMyBtn.addEventListener('click', () => {
@@ -1351,7 +1359,7 @@ function initStampFeatures() {
             tabMyBtn.classList.replace('btn-primary', 'btn-secondary');
             areaPub.classList.remove('hidden');
             areaMy.classList.add('hidden');
-            renderPublicStampPacks();
+            renderPublicStampPacks(publicSearchInput ? publicSearchInput.value : '');
         });
     }
 
@@ -1429,10 +1437,17 @@ function initStampFeatures() {
         savePackPubBtn.addEventListener('click', () => savePackInternal(true));
     }
 
-    const publicSearchInput = document.getElementById('public-stamp-search-input');
     if (publicSearchInput) {
         publicSearchInput.addEventListener('input', (e) => {
             renderPublicStampPacks(e.target.value);
+        });
+    }
+
+    if (clearSearchBtn && publicSearchInput) {
+        clearSearchBtn.addEventListener('click', () => {
+            publicSearchInput.value = '';
+            renderPublicStampPacks('');
+            publicSearchInput.focus();
         });
     }
 }
@@ -1491,6 +1506,10 @@ async function renderPublicStampPacks(query = "") {
     const list = document.getElementById('public-stamp-packs-list');
     if (!list) return;
 
+    const publicSearchInput = document.getElementById('public-stamp-search-input');
+    const clearSearchBtn = document.getElementById('clear-public-search-btn');
+    const countBadge = document.getElementById('public-stamp-search-count');
+
     let publicPacks = [];
     try {
         const { data, error } = await supabaseClient.from('stamp_packs').select('*').order('created_at', { ascending: false });
@@ -1510,17 +1529,26 @@ async function renderPublicStampPacks(query = "") {
         if (!publicPacks.some(pub => pub.name === p.name)) publicPacks.push(p);
     });
 
-    const q = (query || "").toLowerCase().trim();
-    if (q) {
+    const rawQuery = query !== undefined ? query : (publicSearchInput ? publicSearchInput.value : "");
+    if (clearSearchBtn) {
+        clearSearchBtn.style.display = rawQuery.trim() ? 'block' : 'none';
+    }
+
+    const normQ = normalizeForSearch(rawQuery);
+    if (normQ) {
         publicPacks = publicPacks.filter(p => 
-            (p.name || "").toLowerCase().includes(q) ||
-            (p.description || "").toLowerCase().includes(q) ||
-            (p.authorName || "").toLowerCase().includes(q)
+            normalizeForSearch(p.name).includes(normQ) ||
+            normalizeForSearch(p.description).includes(normQ) ||
+            normalizeForSearch(p.authorName).includes(normQ)
         );
     }
 
+    if (countBadge) {
+        countBadge.innerText = `${publicPacks.length}件`;
+    }
+
     if (publicPacks.length === 0) {
-        list.innerHTML = `<p style="color:#aaa; font-size:12px;">${q ? '該当するスタンプが見つかりません' : '公開されているスタンプはありません'}</p>`;
+        list.innerHTML = `<div style="text-align:center; padding: 20px 10px; color:#94a3b8;"><p style="font-size: 24px; margin-bottom: 4px;">🔍</p><p style="font-size:12px;">${normQ ? '「' + rawQuery + '」に一致するスタンプはありません' : '公開されているスタンプはありません'}</p></div>`;
         return;
     }
 
